@@ -232,17 +232,72 @@
   }
 
   // ---------- Watchlist ----------
+  /**
+   * How much of one bet the watchlist actually is. Counting names overstates
+   * diversification when they move together, so the headline is the effective
+   * number of independent bets; the bar shows how the names split across the
+   * correlation groups, and the note names the largest overlap.
+   */
+  function concentrationBlock(symbols) {
+    var set = corrSet(S.mode);
+    if (!set) return null;
+    var split = Concentration.groupsOf(set, symbols);
+    if (split.covered.length < 2) return null;
+
+    var idx = split.covered.map(function (sym) { return split.index[sym]; });
+    var rho = Concentration.avgPairwiseCorr(set.matrix, idx);
+    var bets = Concentration.effectiveBets(split.covered.length, rho);
+
+    var box = h('div', 'conc');
+    var top = h('div', 'conc-top');
+    var shown = bets.toFixed(1);
+    top.appendChild(h('div', 'conc-n num', shown));
+    var lbl = h('div', 'conc-lbl');
+    // Singular only when the number actually displayed is 1.0.
+    lbl.appendChild(h('div', 't', shown === '1.0' ? 'independent bet' : 'independent bets'));
+    var meta = split.covered.length + ' names · avg ρ ' + ratio(rho);
+    if (split.uncovered.length) meta += ' · ' + split.uncovered.length + ' not ranked in this mode';
+    lbl.appendChild(h('div', 'm num', meta));
+    top.appendChild(lbl);
+    box.appendChild(top);
+
+    // One segment per group, width proportional to how many names sit in it.
+    // Deliberately one neutral tone at descending strength rather than the
+    // gain/loss or correlation hues: a wide leading segment is the signal, and
+    // green here would read as 'good' when it means the opposite.
+    var bar = h('div', 'conc-bar');
+    split.groups.forEach(function (g, i) {
+      var seg = h('i');
+      seg.style.flex = String(g.symbols.length);
+      seg.style.opacity = String(Math.max(0.22, 1 - i * 0.26));
+      seg.title = g.symbols.join(', ');
+      bar.appendChild(seg);
+    });
+    box.appendChild(bar);
+
+    var big = split.groups[0];
+    box.appendChild(h('div', 'conc-note', big.symbols.length < 2
+      ? 'No two of these move as a group — ' + split.groups.length + ' separate bets.'
+      : big.symbols.length + ' of them move as one: ' + big.symbols.join(' · ')));
+    return box;
+  }
+
   function watchlistScreen() {
     var sc = h('div', 'screen');
     var present = orderedSymbols('watchlist');
-    if (present.length) {
-      var hdr = h('div', 'hdr');
-      hdr.appendChild(h('div', 'sub', present.length + (present.length === 1 ? ' stock' : ' stocks')));
-      sc.appendChild(hdr);
-    }
     if (!present.length) {
       sc.appendChild(emptyState('☆', 'Nothing watched yet', 'Tap the star on any stock in Ranks to add it here.'));
       return sc;
+    }
+    // The concentration card already opens with the count, so the header only
+    // earns its line when there is no card (a single name, or none ranked).
+    var conc = concentrationBlock(present);
+    if (conc) {
+      sc.appendChild(conc);
+    } else {
+      var hdr = h('div', 'hdr');
+      hdr.appendChild(h('div', 'sub', present.length + (present.length === 1 ? ' stock' : ' stocks')));
+      sc.appendChild(hdr);
     }
     var list = h('div');
     present.forEach(function (sym) {
