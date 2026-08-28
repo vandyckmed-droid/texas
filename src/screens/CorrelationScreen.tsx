@@ -137,43 +137,95 @@ export function CorrelationScreen() {
         <Legend poles={poles} />
 
         <Text style={s.sectionTitle}>GROUPS</Text>
-        {set.clusters.map((cluster) => {
-          const isFocused = cluster.id === focusedId;
-          const members = set.tickers.slice(cluster.start, cluster.start + cluster.size);
-          return (
-            <View key={cluster.id} style={[s.card, isFocused && s.cardFocused]}>
-              <Pressable style={s.cardHead} onPress={() => toggleFocus(cluster)}>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.cardTitle}>
-                    {cluster.topSector} ({cluster.size})
-                  </Text>
-                  <PriceText style={s.cardMeta}>
-                    avg ρ {formatRatio(cluster.avgIntraCorr)}
-                  </PriceText>
+        <Text style={s.sectionHint}>
+          Grouped by co-movement over the last 126 trading days — not by sector.
+        </Text>
+        {set.clusters
+          .filter((cluster) => cluster.size > 1)
+          .map((cluster, index) => {
+            const isFocused = cluster.id === focusedId;
+            const members = set.tickers.slice(cluster.start, cluster.start + cluster.size);
+            return (
+              <View key={cluster.id} style={[s.card, isFocused && s.cardFocused]}>
+                <Pressable style={s.cardHead} onPress={() => toggleFocus(cluster)}>
+                  <PriceText style={s.cardIndex}>{index + 1}</PriceText>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.cardTitle}>{compositionLabel(members)}</Text>
+                    <PriceText style={s.cardMeta}>
+                      {cluster.size} stocks · avg ρ {formatRatio(cluster.avgIntraCorr)}
+                    </PriceText>
+                  </View>
+                  <Ionicons
+                    name={isFocused ? 'eye' : 'eye-outline'}
+                    size={17}
+                    color={isFocused ? theme.colors.text : theme.colors.textTertiary}
+                  />
+                </Pressable>
+                <View style={s.chips}>
+                  {members.map((symbol) => (
+                    <Pressable
+                      key={symbol}
+                      style={s.chip}
+                      onPress={() => openTicker(symbol, cluster)}
+                    >
+                      <Text style={s.chipText}>{symbol}</Text>
+                    </Pressable>
+                  ))}
                 </View>
-                <Ionicons
-                  name={isFocused ? 'eye' : 'eye-outline'}
-                  size={17}
-                  color={isFocused ? theme.colors.text : theme.colors.textTertiary}
-                />
-              </Pressable>
+              </View>
+            );
+          })}
+        {(() => {
+          const solo = set.clusters.filter((cluster) => cluster.size === 1);
+          if (solo.length === 0) return null;
+          return (
+            <View style={s.card}>
+              <View style={s.cardHead}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.cardTitle}>Independent</Text>
+                  <Text style={s.cardMeta}>
+                    {solo.length} stocks not tightly co-moving with any group
+                  </Text>
+                </View>
+              </View>
               <View style={s.chips}>
-                {members.map((symbol) => (
-                  <Pressable
-                    key={symbol}
-                    style={s.chip}
-                    onPress={() => openTicker(symbol, cluster)}
-                  >
-                    <Text style={s.chipText}>{symbol}</Text>
-                  </Pressable>
-                ))}
+                {solo.map((cluster) => {
+                  const symbol = set.tickers[cluster.start];
+                  return (
+                    <Pressable
+                      key={symbol}
+                      style={s.chip}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/ticker/[symbol]',
+                          params: { symbol, list: `solo:${mode}` },
+                        })
+                      }
+                    >
+                      <Text style={s.chipText}>{symbol}</Text>
+                    </Pressable>
+                  );
+                })}
               </View>
             </View>
           );
-        })}
+        })()}
       </ScrollView>
     </View>
   );
+}
+
+/** Honest cluster label: the sector only when pure, hedged otherwise. */
+function compositionLabel(members: string[]): string {
+  const counts = new Map<string, number>();
+  for (const symbol of members) {
+    const sector = getStock(symbol)?.sector ?? 'Unknown';
+    counts.set(sector, (counts.get(sector) ?? 0) + 1);
+  }
+  const [topSector, topCount] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (topCount === members.length) return topSector;
+  if (topCount >= (members.length * 2) / 3) return `Mostly ${topSector}`;
+  return 'Mixed sectors';
 }
 
 function Back({ onPress }: { onPress: () => void }) {
@@ -219,6 +271,21 @@ const styles = (theme: Theme) =>
     legendStrip: { flexDirection: 'row', borderRadius: 3, overflow: 'hidden' },
     legendLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: space.s4 },
     legendLabel: { ...typo.micro, color: theme.colors.textTertiary },
+    sectionHint: {
+      ...typo.caption,
+      color: theme.colors.textTertiary,
+      marginHorizontal: layout.gutter,
+      marginTop: -4,
+      marginBottom: space.s8,
+      lineHeight: 16,
+    },
+    cardIndex: {
+      ...typo.rowMeta,
+      color: theme.colors.textTertiary,
+      width: 20,
+      alignSelf: 'flex-start',
+      marginTop: 3,
+    },
     sectionTitle: {
       ...typo.micro,
       letterSpacing: 0.8,
