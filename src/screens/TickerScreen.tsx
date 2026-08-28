@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeInLeft, FadeInRight } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { EmptyState } from '@/src/components/EmptyState';
 import { PriceText } from '@/src/components/PriceText';
 import { Segmented } from '@/src/components/Segmented';
@@ -70,7 +70,6 @@ export function TickerScreen() {
   const [win, setWin] = useState<WindowKey>('6M');
   const [kind, setKind] = useState<ChartKind>('line');
   const [readoutIdx, setReadoutIdx] = useState<number | null>(null);
-  const direction = useRef(1);
 
   const stock = symbol ? getStock(symbol) : undefined;
   const chart = symbol ? getChart(symbol) : null;
@@ -86,7 +85,6 @@ export function TickerScreen() {
     const next = nav[navIndex + dir];
     if (!next) return;
     tap();
-    direction.current = dir;
     setReadoutIdx(null);
     router.setParams({ symbol: next });
   };
@@ -160,11 +158,10 @@ export function TickerScreen() {
         )}
       </View>
 
-      <Animated.View
-        key={stock.symbol}
-        entering={(direction.current >= 0 ? FadeInRight : FadeInLeft).duration(200)}
-        style={{ flex: 1 }}
-      >
+      {/* A plain fade, not a horizontal slide: sliding translated the whole
+          body including the chart canvas, which read as a jerk sideways rather
+          than a transition. */}
+      <Animated.View key={stock.symbol} entering={FadeIn.duration(160)} style={{ flex: 1 }}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: space.s24 }}>
           <View style={s.priceBlock}>
             <PriceText style={s.bigPrice}>{formatPrice(shownClose)}</PriceText>
