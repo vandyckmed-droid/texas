@@ -6,8 +6,8 @@
     "start": "expo start",
     "refresh": "tsx scripts/refresh.ts",
     "generate:mock": "tsx scripts/mock.ts",
-    "pretest": "node -e \"if(!require('fs').readdirSync('quant/__tests__').some(f=>f.endsWith('.test.ts')))throw new Error('no test files found')\"",
-    "test": "tsx --test quant/__tests__/*.test.ts",
+    "pretest": "node -e \"const fs=require('fs');for(const d of ['quant/__tests__','src/charts/__tests__'])if(!fs.readdirSync(d).some(f=>f.endsWith('.test.ts')))throw new Error('no test files found in '+d)\"",
+    "test": "tsx --test quant/__tests__/*.test.ts src/charts/__tests__/*.test.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "lint": "expo lint",
     "export": "expo export --platform ios"

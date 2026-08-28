@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInLeft, FadeInRight } from 'react-native-reanimated';
@@ -71,10 +71,11 @@ export function TickerScreen() {
   const stock = symbol ? getStock(symbol) : undefined;
   const chart = symbol ? getChart(symbol) : null;
 
-  const nav = useMemo(
-    () => orderedSymbols(list, watchSymbols, settings.rankMode),
-    [list, watchSymbols, settings.rankMode],
-  );
+  // Snapshot on entry: the list param and rank mode are fixed for a pushed
+  // screen, and prev/next swaps symbols via setParams without remounting, so
+  // this stays the list the user arrived with — unstarring the symbol you are
+  // viewing must not empty out its own navigation.
+  const [nav] = useState(() => orderedSymbols(list, watchSymbols, settings.rankMode));
   const navIndex = symbol ? nav.indexOf(symbol) : -1;
 
   const go = (dir: 1 | -1) => {
@@ -101,18 +102,21 @@ export function TickerScreen() {
   const n = windowBars(win, chart.c.length);
   const offset = chart.c.length - n;
   const windowFirst = chart.c[offset];
-  const shownClose = readoutIdx === null ? stock.price : chart.c[offset + readoutIdx];
+  // A window change re-renders before PriceChart's reset effect clears the
+  // crosshair, so an index from a longer window can outlive its slice.
+  const idx = readoutIdx !== null && readoutIdx < n ? readoutIdx : null;
+  const shownClose = idx === null ? stock.price : chart.c[offset + idx];
   const delta = shownClose - windowFirst;
   const deltaPct = windowFirst !== 0 ? delta / windowFirst : 0;
   const deltaColor = delta >= 0 ? theme.colors.positive : theme.colors.negative;
   const chartHeight = 290;
 
   const readoutLine =
-    readoutIdx === null
+    idx === null
       ? `${delta >= 0 ? '+' : '−'}${formatPrice(Math.abs(delta))} (${formatPct(deltaPct)}) · ${win}`
       : kind === 'candle'
-        ? `${formatDayLong(chart.t[offset + readoutIdx])} · O ${formatPrice(chart.o[offset + readoutIdx])}  H ${formatPrice(chart.h[offset + readoutIdx])}  L ${formatPrice(chart.l[offset + readoutIdx])}`
-        : `${formatDayLong(chart.t[offset + readoutIdx])} · ${delta >= 0 ? '+' : '−'}${formatPrice(Math.abs(delta))} (${formatPct(deltaPct)})`;
+        ? `${formatDayLong(chart.t[offset + idx])} · O ${formatPrice(chart.o[offset + idx])}  H ${formatPrice(chart.h[offset + idx])}  L ${formatPrice(chart.l[offset + idx])}`
+        : `${formatDayLong(chart.t[offset + idx])} · ${delta >= 0 ? '+' : '−'}${formatPrice(Math.abs(delta))} (${formatPct(deltaPct)})`;
 
   return (
     <View style={[s.screen, { paddingTop: insets.top }]}>
@@ -160,7 +164,7 @@ export function TickerScreen() {
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: space.s24 }}>
           <View style={s.priceBlock}>
             <PriceText style={s.bigPrice}>{formatPrice(shownClose)}</PriceText>
-            <PriceText style={[s.readout, { color: readoutIdx === null || kind === 'line' ? deltaColor : theme.colors.textSecondary }]}>
+            <PriceText style={[s.readout, { color: idx === null || kind === 'line' ? deltaColor : theme.colors.textSecondary }]}>
               {readoutLine}
             </PriceText>
           </View>

@@ -10,7 +10,7 @@ import {
 import { motion } from '@/src/theme/tokens';
 import { useTheme } from '@/src/theme/useTheme';
 import type { ChartFile } from '@/shared/types';
-import { padDomain, windowBars, yFor, type ChartFrame, type WindowKey } from './scales';
+import { padDomain, plotWidth, windowBars, xForBar, yFor, type ChartFrame, type WindowKey } from './scales';
 
 interface Props {
   chart: ChartFile;
@@ -28,7 +28,7 @@ interface Props {
  */
 export function CandleChart({ chart, window: win, frame, activeIndex, crossOpacity }: Props) {
   const theme = useTheme();
-  const plotW = frame.width - frame.labelGutter;
+  const plotW = plotWidth(frame);
   const len = chart.c.length;
 
   const domains = useMemo(() => {
@@ -94,11 +94,9 @@ export function CandleChart({ chart, window: win, frame, activeIndex, crossOpaci
   // Crosshair: snap to bar centers of the settled window.
   const { n, lo, hi } = domains[win];
   const closes = c.slice(len - n);
-  const cx = useDerivedValue(() => {
-    if (activeIndex.value < 0) return -100;
-    const slot = plotW / n;
-    return plotW - (n - Math.min(activeIndex.value, n - 1) - 0.5) * slot;
-  });
+  const cx = useDerivedValue(() =>
+    activeIndex.value < 0 ? -100 : xForBar(Math.min(activeIndex.value, n - 1), n, frame),
+  );
   const cy = useDerivedValue(() =>
     activeIndex.value < 0 ? -100 : yFor(closes[Math.min(activeIndex.value, n - 1)], lo, hi, frame),
   );

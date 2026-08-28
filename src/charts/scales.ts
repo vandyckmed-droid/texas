@@ -14,9 +14,15 @@ export const windowBars = (key: WindowKey, available: number): number => {
   return Math.min(spec, available);
 };
 
-/** Fixed point count every line window resamples to → identical path verb
- * structure → Skia path interpolation is always valid. */
-export const LINE_POINTS = 100;
+/**
+ * Fixed point count every line window resamples to → identical path verb
+ * structure → Skia path interpolation is always valid.
+ *
+ * Kept at the CHART_BARS cap in scripts/refresh.ts so no window is ever
+ * downsampled: the drawn line then passes through the same closes the
+ * crosshair reads out, instead of smoothing spikes away from the dot.
+ */
+export const LINE_POINTS = 253;
 
 /** Linear interpolation resample of `values` to exactly `n` points. */
 export function resampleToN(values: number[], n: number): number[] {
@@ -59,21 +65,34 @@ export const plotHeight = (f: ChartFrame): number => f.height - f.padTop - f.pad
 /** y pixel for a price given a domain and frame. Plain function — worklet-safe. */
 export function yFor(price: number, lo: number, hi: number, f: ChartFrame): number {
   'worklet';
-  const h = f.height - f.padTop - f.padBottom;
-  return f.padTop + (1 - (price - lo) / (hi - lo)) * h;
+  return f.padTop + (1 - (price - lo) / (hi - lo)) * plotHeight(f);
 }
 
 /** x pixel for bar i of n (bar centers spread across the plot). */
 export function xForBar(i: number, n: number, f: ChartFrame): number {
   'worklet';
-  const w = f.width - f.labelGutter;
+  const w = plotWidth(f);
   return n <= 1 ? w / 2 : ((i + 0.5) / n) * w;
 }
 
-/** Nearest bar index for a touch x. */
+/**
+ * Nearest bar index for a touch x under the bar-CENTRE layout (candles).
+ * Inverse of xForBar.
+ */
 export function barForX(x: number, n: number, f: ChartFrame): number {
   'worklet';
-  const w = f.width - f.labelGutter;
-  const i = Math.round((x / w) * n - 0.5);
+  const i = Math.round((x / plotWidth(f)) * n - 0.5);
+  return Math.max(0, Math.min(n - 1, i));
+}
+
+/**
+ * Nearest bar index under the EDGE-TO-EDGE layout the line chart draws with
+ * (x = i/(n−1) · w). Using the bar-centre inverse here skews the hairline by
+ * up to half a slot near the plot edges.
+ */
+export function barForXLine(x: number, n: number, f: ChartFrame): number {
+  'worklet';
+  if (n <= 1) return 0;
+  const i = Math.round((x / plotWidth(f)) * (n - 1));
   return Math.max(0, Math.min(n - 1, i));
 }

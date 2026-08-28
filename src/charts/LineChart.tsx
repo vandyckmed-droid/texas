@@ -14,6 +14,7 @@ import type { ChartFile } from '@/shared/types';
 import {
   LINE_POINTS,
   padDomain,
+  plotWidth,
   resampleToN,
   windowBars,
   WINDOWS,
@@ -21,6 +22,20 @@ import {
   type ChartFrame,
   type WindowKey,
 } from './scales';
+
+/**
+ * Hex → rgba string. interpolateColor blends rgba() reliably, so the fill can
+ * be interpolated across the morph the same way the stroke is.
+ */
+function withAlpha(hex: string, a: number): string {
+  'worklet';
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+const FILL_ALPHA = 0.18;
 
 interface Props {
   chart: ChartFile;
@@ -39,7 +54,7 @@ interface Props {
  */
 export function LineChart({ chart, window: win, frame, activeIndex, crossOpacity }: Props) {
   const theme = useTheme();
-  const plotW = frame.width - frame.labelGutter;
+  const plotW = plotWidth(frame);
   const baseY = frame.height - frame.padBottom;
 
   const built = useMemo(() => {
@@ -110,8 +125,16 @@ export function LineChart({ chart, window: win, frame, activeIndex, crossOpacity
     interpolateColor(progress.value, [0, 1], [fromColor.value, toColor.value]),
   );
   const gradientColors = useDerivedValue(() => [
-    `${toColor.value}2E`,
-    `${toColor.value}00`,
+    interpolateColor(
+      progress.value,
+      [0, 1],
+      [withAlpha(fromColor.value, FILL_ALPHA), withAlpha(toColor.value, FILL_ALPHA)],
+    ),
+    interpolateColor(
+      progress.value,
+      [0, 1],
+      [withAlpha(fromColor.value, 0), withAlpha(toColor.value, 0)],
+    ),
   ]);
 
   // Crosshair snaps to real bars of the current window.

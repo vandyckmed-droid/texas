@@ -15,7 +15,7 @@ import { useTheme } from '@/src/theme/useTheme';
 import type { ChartFile } from '@/shared/types';
 import { CandleChart } from './CandleChart';
 import { LineChart } from './LineChart';
-import { barForX, padDomain, windowBars, type ChartFrame, type WindowKey } from './scales';
+import { barForX, barForXLine, padDomain, windowBars, type ChartFrame, type WindowKey } from './scales';
 import { PriceText } from '@/src/components/PriceText';
 import { formatPrice } from '@/src/data/format';
 
@@ -58,22 +58,26 @@ export function PriceChart({ chart, window: win, kind, width, height, onReadout 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [win, kind, chart]);
 
+  // Candles are laid out on bar centres, the line edge-to-edge; using one
+  // inverse for both skews the hairline by up to half a slot near the edges.
+  const indexAt = kind === 'candle' ? barForX : barForXLine;
+
   const gesture = useMemo(
     () =>
       Gesture.Pan()
         .activateAfterLongPress(150)
         .onStart((e) => {
-          activeIndex.value = barForX(e.x, n, frame);
+          activeIndex.value = indexAt(e.x, n, frame);
           crossOpacity.value = withTiming(1, { duration: motion.fast });
         })
         .onUpdate((e) => {
-          activeIndex.value = barForX(e.x, n, frame);
+          activeIndex.value = indexAt(e.x, n, frame);
         })
         .onFinalize(() => {
           crossOpacity.value = withTiming(0, { duration: motion.fast });
           activeIndex.value = -1;
         }),
-    [n, frame, activeIndex, crossOpacity],
+    [n, frame, indexAt, activeIndex, crossOpacity],
   );
 
   useAnimatedReaction(
