@@ -67,11 +67,19 @@ for (const stock of [...rankings.stocks].sort((a, b) => (a.fileKey < b.fileKey ?
   charts[stock.fileKey] = { cal: calendarId(t), c };
 }
 
+/**
+ * Prior ranks stay in data/ but are dropped here: nothing in the app reads
+ * them since the movement carets were removed, and shipping ~500 unread pairs
+ * is dead payload. scripts/write.ts still records them, so an entrants/exits
+ * view could use them later without another refresh cycle to seed history.
+ */
+const shipped = {
+  ...rankings,
+  stocks: rankings.stocks.map(({ prevRankBlended, prevRankVolAdj, ...keep }) => keep),
+};
+
 /** `</` inside a string literal would close the enclosing <script> early. */
-// The app must be able to tell "unchanged" from "no history yet", or a first
-// snapshot would label all 500 names new.
-const hasPrevious = rankings.stocks.some((s) => s.prevRankBlended !== undefined);
-const payload = JSON.stringify({ meta, rankings: { ...rankings, hasPrevious }, correlation, calendars, charts }).replace(/<\//g, '<\\/');
+const payload = JSON.stringify({ meta, rankings: shipped, correlation, calendars, charts }).replace(/<\//g, '<\\/');
 
 const css = readFileSync(join(here, 'app.css'), 'utf8');
 // chartmath first: app.js closes over the global it defines.

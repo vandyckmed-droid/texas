@@ -261,30 +261,9 @@
     });
     return w;
   }
-  /**
-   * Rank movement since the previous refresh, as a caret under the rank.
-   * Absent until a refresh has run with a prior snapshot on disk, so the
-   * column simply stays empty rather than claiming everything is unchanged.
-   */
-  function rankMove(st) {
-    var prev = S.mode === 'blended' ? st.prevRankBlended : st.prevRankVolAdj;
-    var now = rankOf(st, S.mode);
-    if (prev === undefined || prev === null) {
-      // No prior entry at all: the name is new to the ranked universe.
-      return D.rankings.hasPrevious ? h('span', 'move new', 'new') : null;
-    }
-    var d = prev - now; // positive means it climbed
-    if (d === 0) return null;
-    return h('span', 'move ' + (d > 0 ? 'pos' : 'neg'), (d > 0 ? '▲' : '▼') + Math.abs(d));
-  }
-
   function stockRow(s, rank, list, onStar) {
     var row = h('button', 'row');
-    var rk = h('span', 'rank num');
-    rk.appendChild(h('span', 'n', String(rank)));
-    var mv = rankMove(s);
-    if (mv) rk.appendChild(mv);
-    row.appendChild(rk);
+    row.appendChild(h('span', 'rank num', String(rank)));
     var nc = h('div', 'namecol');
     nc.appendChild(h('div', 'sym', s.symbol));
     nc.appendChild(h('div', 'nm', s.name));
