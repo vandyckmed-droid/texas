@@ -57,6 +57,13 @@ export interface StockRow {
   /** blended / vol. */
   volAdj: number;
   rankBlended: number;
+  /**
+   * Ranks in the snapshot this refresh replaced, absent for a name that was
+   * not in it. Carried forward so the app can show what moved between
+   * refreshes; the previous snapshot is otherwise overwritten and gone.
+   */
+  prevRankBlended?: number;
+  prevRankVolAdj?: number;
   rankVolAdj: number;
   wk52Low: number;
   wk52High: number;

@@ -22,6 +22,30 @@ export const round = (v: number, dp: number): number => {
 
 const DATA_DIR = path.join(import.meta.dirname, '..', 'data');
 
+/**
+ * Prior ranks from the snapshot on disk, keyed by symbol.
+ *
+ * Deliberately forgiving: a first run, a hand-edited file, or a snapshot
+ * written before these fields existed all yield an empty map rather than
+ * failing the refresh. Losing the movement indicators is a far smaller cost
+ * than refusing to write a good snapshot.
+ */
+export function readPreviousRanks(): Map<string, { prevRankBlended: number; prevRankVolAdj: number }> {
+  const out = new Map<string, { prevRankBlended: number; prevRankVolAdj: number }>();
+  try {
+    const file = path.join(DATA_DIR, 'rankings.json');
+    const prior = JSON.parse(fs.readFileSync(file, 'utf8')) as Rankings;
+    for (const s of prior.stocks ?? []) {
+      if (typeof s.rankBlended === 'number' && typeof s.rankVolAdj === 'number') {
+        out.set(s.symbol, { prevRankBlended: s.rankBlended, prevRankVolAdj: s.rankVolAdj });
+      }
+    }
+  } catch {
+    // No readable previous snapshot; movement is simply not reported.
+  }
+  return out;
+}
+
 export function writeSnapshot(snapshot: Snapshot): void {
   const tmp = path.join(DATA_DIR, '.tmp-write');
   fs.rmSync(tmp, { recursive: true, force: true });

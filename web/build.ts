@@ -68,7 +68,10 @@ for (const stock of [...rankings.stocks].sort((a, b) => (a.fileKey < b.fileKey ?
 }
 
 /** `</` inside a string literal would close the enclosing <script> early. */
-const payload = JSON.stringify({ meta, rankings, correlation, calendars, charts }).replace(/<\//g, '<\\/');
+// The app must be able to tell "unchanged" from "no history yet", or a first
+// snapshot would label all 500 names new.
+const hasPrevious = rankings.stocks.some((s) => s.prevRankBlended !== undefined);
+const payload = JSON.stringify({ meta, rankings: { ...rankings, hasPrevious }, correlation, calendars, charts }).replace(/<\//g, '<\\/');
 
 const css = readFileSync(join(here, 'app.css'), 'utf8');
 // chartmath first: app.js closes over the global it defines.
