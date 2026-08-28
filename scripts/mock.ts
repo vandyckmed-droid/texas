@@ -23,13 +23,26 @@ const N_DAYS = 550;
 const CHART_DAYS = 253;
 const ROLLING_POINTS = 26;
 
-/** Trading dates ending near today, skipping weekends. */
+/** NYSE full-day closures, 2024–2026, so the mock calendar matches real trading dates. */
+const US_MARKET_HOLIDAYS = new Set([
+  '2024-01-01', '2024-01-15', '2024-02-19', '2024-03-29', '2024-05-27',
+  '2024-06-19', '2024-07-04', '2024-09-02', '2024-11-28', '2024-12-25',
+  '2025-01-01', '2025-01-09', '2025-01-20', '2025-02-17', '2025-04-18',
+  '2025-05-26', '2025-06-19', '2025-07-04', '2025-09-01', '2025-11-27',
+  '2025-12-25',
+  '2026-01-01', '2026-01-19', '2026-02-16', '2026-04-03', '2026-05-25',
+  '2026-06-19', '2026-07-03', '2026-09-07', '2026-11-26', '2026-12-25',
+]);
+
+/** Trading dates ending near today, skipping weekends and US market holidays. */
 function tradingDates(n: number): Date[] {
   const dates: Date[] = [];
   const d = new Date();
   while (dates.length < n) {
     const day = d.getUTCDay();
-    if (day !== 0 && day !== 6) dates.push(new Date(d));
+    if (day !== 0 && day !== 6 && !US_MARKET_HOLIDAYS.has(d.toISOString().slice(0, 10))) {
+      dates.push(new Date(d));
+    }
     d.setUTCDate(d.getUTCDate() - 1);
   }
   return dates.reverse();
@@ -98,7 +111,11 @@ function main(): void {
     const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
     const vol =
       Math.sqrt(rets.reduce((a, b) => a + (b - mean) ** 2, 0) / (rets.length - 1)) * Math.sqrt(252);
-    const wk52 = s.closes.slice(-252);
+    // 52-week range from the bars' intraday extremes (matches the real
+    // pipeline: candles must never extend past the stated range).
+    const barsInYear = Math.min(252, s.chart.h.length);
+    const highs = s.chart.h.slice(-barsInYear);
+    const lows = s.chart.l.slice(-barsInYear);
     return {
       symbol: s.symbol,
       fileKey: s.symbol,
@@ -110,8 +127,8 @@ function main(): void {
       blended: round(blended, 4),
       vol: round(vol, 4),
       volAdj: round(blended / vol, 4),
-      wk52Low: round(Math.min(...wk52), 2),
-      wk52High: round(Math.max(...wk52), 2),
+      wk52Low: round(Math.min(...lows), 2),
+      wk52High: round(Math.max(...highs), 2),
       rolling: Array.from({ length: ROLLING_POINTS }, (_, k) =>
         k < 3 && rand() < 0.15 ? null : round(2 * Math.tanh((blended * 2 + (rand() - 0.5)) / 2), 3),
       ),
@@ -138,17 +155,13 @@ function main(): void {
       .sort((a, b) => (mode === 'blended' ? a.rankBlended - b.rankBlended : a.rankVolAdj - b.rankVolAdj))
       .slice(0, 50);
     const groupSizes = [11, 9, 8, 8, 7, 4, 3];
-    const clusters: CorrelationSet['clusters'] = [];
+    const bounds: { id: number; start: number; size: number }[] = [];
     let start = 0;
     groupSizes.forEach((size, id) => {
-      const members = top.slice(start, start + size);
-      const sectorCounts = new Map<Sector, number>();
-      members.forEach((m) => sectorCounts.set(m.sector, (sectorCounts.get(m.sector) ?? 0) + 1));
-      const topSector = [...sectorCounts.entries()].sort((a, b) => b[1] - a[1])[0][0];
-      clusters.push({ id, start, size, avgIntraCorr: round(0.45 + rand() * 0.3, 2), topSector });
+      bounds.push({ id, start, size });
       start += size;
     });
-    const groupOf = (i: number) => clusters.findIndex((cl) => i >= cl.start && i < cl.start + cl.size);
+    const groupOf = (i: number) => bounds.findIndex((cl) => i >= cl.start && i < cl.start + cl.size);
     const matrix = Array.from({ length: 50 }, () => new Array<number>(50).fill(0));
     for (let i = 0; i < 50; i++) {
       for (let j = i; j < 50; j++) {
@@ -157,6 +170,22 @@ function main(): void {
         matrix[i][j] = matrix[j][i] = round(r, 2);
       }
     }
+    // Cluster labels derived from the matrix actually generated above.
+    const clusters: CorrelationSet['clusters'] = bounds.map(({ id, start: s0, size }) => {
+      const members = top.slice(s0, s0 + size);
+      const sectorCounts = new Map<Sector, number>();
+      members.forEach((m) => sectorCounts.set(m.sector, (sectorCounts.get(m.sector) ?? 0) + 1));
+      const topSector = [...sectorCounts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+      let sum = 0;
+      let cnt = 0;
+      for (let i = s0; i < s0 + size; i++) {
+        for (let j = i + 1; j < s0 + size; j++) {
+          sum += matrix[i][j];
+          cnt++;
+        }
+      }
+      return { id, start: s0, size, avgIntraCorr: cnt > 0 ? round(sum / cnt, 2) : 1, topSector };
+    });
     return { mode, tickers: top.map((s) => s.symbol), matrix, clusters };
   };
 

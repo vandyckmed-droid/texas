@@ -31,7 +31,10 @@ export function writeSnapshot(snapshot: Snapshot): void {
   fs.writeFileSync(path.join(tmp, 'rankings.json'), JSON.stringify(snapshot.rankings) + '\n');
   fs.writeFileSync(path.join(tmp, 'correlation.json'), JSON.stringify(snapshot.correlation) + '\n');
 
-  const sortedCharts = [...snapshot.charts].sort((a, b) => a.fileKey.localeCompare(b.fileKey));
+  // Code-unit comparison: byte-stable order regardless of process locale.
+  const sortedCharts = [...snapshot.charts].sort((a, b) =>
+    a.fileKey < b.fileKey ? -1 : a.fileKey > b.fileKey ? 1 : 0,
+  );
   for (const { fileKey, file } of sortedCharts) {
     if (!/^[A-Z0-9.-]+$/i.test(fileKey)) throw new Error(`unsafe chart file key: ${fileKey}`);
     fs.writeFileSync(path.join(tmp, 'charts', `${fileKey}.json`), JSON.stringify(file) + '\n');
@@ -52,11 +55,22 @@ export function writeSnapshot(snapshot: Snapshot): void {
   ];
   fs.writeFileSync(path.join(tmp, 'charts', 'index.ts'), indexLines.join('\n'));
 
-  // Swap into place.
+  // Swap into place. The old charts dir is moved aside before the new one is
+  // renamed in, so there is never a moment with rankings written but no charts;
+  // it is deleted only after the new directory is in place.
   for (const name of ['meta.json', 'rankings.json', 'correlation.json']) {
     fs.renameSync(path.join(tmp, name), path.join(DATA_DIR, name));
   }
-  fs.rmSync(path.join(DATA_DIR, 'charts'), { recursive: true, force: true });
-  fs.renameSync(path.join(tmp, 'charts'), path.join(DATA_DIR, 'charts'));
+  const chartsDir = path.join(DATA_DIR, 'charts');
+  const chartsOld = path.join(DATA_DIR, '.charts-old');
+  fs.rmSync(chartsOld, { recursive: true, force: true });
+  if (fs.existsSync(chartsDir)) fs.renameSync(chartsDir, chartsOld);
+  try {
+    fs.renameSync(path.join(tmp, 'charts'), chartsDir);
+  } catch (err) {
+    if (fs.existsSync(chartsOld)) fs.renameSync(chartsOld, chartsDir);
+    throw err;
+  }
+  fs.rmSync(chartsOld, { recursive: true, force: true });
   fs.rmSync(tmp, { recursive: true, force: true });
 }

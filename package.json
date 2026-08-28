@@ -6,6 +6,7 @@
     "start": "expo start",
     "refresh": "tsx scripts/refresh.ts",
     "generate:mock": "tsx scripts/mock.ts",
+    "pretest": "node -e \"if(!require('fs').readdirSync('quant/__tests__').some(f=>f.endsWith('.test.ts')))throw new Error('no test files found')\"",
     "test": "tsx --test quant/__tests__/*.test.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "lint": "expo lint",
