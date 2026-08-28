@@ -117,17 +117,27 @@
     });
     return seg;
   }
-  function starBtn(sym) {
-    var on = S.watch.indexOf(sym) >= 0;
-    var b = h('button', 'star num' + (on ? ' on' : ''), on ? '★' : '☆');
-    b.setAttribute('aria-label', (on ? 'Remove ' : 'Add ') + sym + (on ? ' from watchlist' : ' to watchlist'));
+  /* Repaints itself rather than re-rendering the screen. render() rebuilds the
+     whole subtree, so the .screen element is new and its scrollTop is zero —
+     starring row 30 used to throw you back to row 1. Only the watchlist needs
+     a rebuild, because the row it just unstarred has to leave; it passes an
+     onToggle that keeps the scroll position. */
+  function starBtn(sym, onToggle) {
+    var b = h('button', 'star num');
+    function paint() {
+      var on = S.watch.indexOf(sym) >= 0;
+      b.className = 'star num' + (on ? ' on' : '');
+      b.textContent = on ? '★' : '☆';
+      b.setAttribute('aria-label', (on ? 'Remove ' : 'Add ') + sym + (on ? ' from watchlist' : ' to watchlist'));
+    }
+    paint();
     b.onclick = function (e) {
       e.stopPropagation();
       haptic();
       var i = S.watch.indexOf(sym);
       if (i >= 0) S.watch.splice(i, 1); else S.watch.push(sym);
       saveLS('texas.web.watch', S.watch);
-      render();
+      if (onToggle) onToggle(); else paint();
     };
     return b;
   }
@@ -155,7 +165,7 @@
     });
     return w;
   }
-  function stockRow(s, rank, list) {
+  function stockRow(s, rank, list, onStar) {
     var row = h('button', 'row');
     row.appendChild(h('span', 'rank num', String(rank)));
     var nc = h('div', 'namecol');
@@ -171,7 +181,7 @@
     pc.appendChild(h('div', 'score num ' + (val >= 0 ? 'pos' : 'neg'),
       S.mode === 'blended' ? pct(s.blended) : ratio(s.volAdj)));
     row.appendChild(pc);
-    row.appendChild(starBtn(s.symbol));
+    row.appendChild(starBtn(s.symbol, onStar));
     row.appendChild(h('i', 'hair'));
     row.onclick = function () { push({ screen: 'ticker', params: { symbol: s.symbol, list: list } }); };
     return row;
@@ -237,7 +247,7 @@
     var list = h('div');
     present.forEach(function (sym) {
       var s = bySymbol[sym];
-      list.appendChild(stockRow(s, rankOf(s, S.mode), 'watchlist'));
+      list.appendChild(stockRow(s, rankOf(s, S.mode), 'watchlist', renderKeepingScroll));
     });
     sc.appendChild(list);
     return sc;
@@ -741,6 +751,15 @@
     } else {
       app.appendChild(correlationScreen());
     }
+  }
+
+  /** Rebuilds the current screen but leaves the reader where they were. */
+  function renderKeepingScroll() {
+    var prev = app.querySelector('.screen');
+    var top = prev ? prev.scrollTop : 0;
+    render();
+    var next = app.querySelector('.screen');
+    if (next) next.scrollTop = top;
   }
 
   var mq = window.matchMedia('(prefers-color-scheme: dark)');
