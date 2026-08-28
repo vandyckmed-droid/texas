@@ -55,10 +55,16 @@ asymmetric correlation matrix, a ranked stock with no chart — it exits without
 writing, leaving the previous snapshot intact.
 
 Before overwriting, the refresh reads the old `rankings.json` and carries each
-symbol's ranks forward as `prevRankBlended`/`prevRankVolAdj`, which is what
-feeds the ▲/▼/new movement carets in the app. A first refresh has nothing to
-carry, so the carets stay blank until the second. The app also shows the
-snapshot's age in the Ranks header once it passes 8 days, heavier past 22.
+symbol's ranks forward as `prevRankBlended`/`prevRankVolAdj`. Nothing in the app
+reads them today — they were added for rank-movement indicators that were
+removed after measurement showed rank deltas are a poor proxy for score change
+in the top 50 (`corr` ≈ 0.14 there against 0.73 below #150, because scores are
+77× denser mid-list). The build strips them from the payload. They keep being
+recorded because a prior snapshot cannot be reconstructed after the fact, and an
+entrants/exits view would need them.
+
+The app shows the snapshot's age in the Ranks header once it passes 8 days,
+heavier past 22.
 
 The full update flow is: ask Claude Code to refresh → `npm run refresh` →
 `npm run build:web` → republish `dist/momentum.html` to the same artifact URL.
@@ -100,8 +106,7 @@ feeds a ranking.
 ## Screens
 
 - **Ranks** — top 50 by blended momentum or its vol-adjusted equivalent, with
-  a toggle at the foot to show all 500. Each rank carries a movement caret
-  (▲/▼/new) against the previous refresh. The row visualisation is chosen in
+  a toggle at the foot to show all 500. The row visualisation is chosen in
   Settings: a 52-week range bar, the rolling blended score, accelerating-or-
   fading (6–1 momentum against 12–1 — red at the top of a momentum list means
   the move is old), or watchlist impact.
