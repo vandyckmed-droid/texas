@@ -26,36 +26,49 @@ const rankings = read<Rankings>('data/rankings.json');
 const correlation = read<CorrelationFile>('data/correlation.json');
 
 /**
- * Charts for the union of both top-50 lists. That is the complete reachable
- * set: the ranking screen shows the top 50 of the selected mode, and the
- * watchlist can only ever hold symbols starred from there. Shipping all 503
- * would multiply the payload roughly eightfold for rows no tap can reach.
+ * Close-only projection of every chart, with the trading calendars pooled.
+ *
+ * Two narrowings, both build-time only — the refresh script still writes full
+ * OHLC per symbol and this does not touch the data format.
+ *
+ * Close-only: the app draws a line and nothing else, so open/high/low would be
+ * three quarters of the chart payload for arrays nothing reads. The 52-week
+ * range they might have served is precomputed into rankings.json.
+ *
+ * Pooled calendars: the dates are the larger half of what remains and are very
+ * nearly all the same. Across the whole index there are only a handful of
+ * distinct date arrays — one shared by almost every symbol, plus a few short
+ * ones for recent listings — so each chart stores a calendar id instead of 253
+ * repeated dates. That is what makes shipping the full universe affordable
+ * rather than the top 50 alone.
  */
-const reachable = new Set<string>();
-for (const key of ['rankBlended', 'rankVolAdj'] as const) {
-  [...rankings.stocks]
-    .sort((a, b) => a[key] - b[key])
-    .slice(0, 50)
-    .forEach((s) => reachable.add(s.fileKey));
+interface PooledChart {
+  cal: number;
+  c: number[];
 }
 
-/**
- * Close-only projection of the chart files. The web app draws a line and
- * nothing else, so the open/high/low series would ship three quarters of the
- * chart payload for arrays nothing reads — the 52-week range it might have
- * served is precomputed into rankings.json. The refresh script still writes
- * full OHLC; this is a build-time narrowing, not a change to the data format.
- */
-type LineChartFile = Pick<ChartFile, 't' | 'c'>;
+const calendars: number[][] = [];
+const calendarIds = new Map<string, number>();
 
-const charts: Record<string, LineChartFile> = {};
-for (const key of [...reachable].sort()) {
-  const { t, c } = read<ChartFile>(`data/charts/${key}.json`);
-  charts[key] = { t, c };
+const calendarId = (dates: number[]): number => {
+  const key = dates.join(',');
+  let id = calendarIds.get(key);
+  if (id === undefined) {
+    id = calendars.length;
+    calendars.push(dates);
+    calendarIds.set(key, id);
+  }
+  return id;
+};
+
+const charts: Record<string, PooledChart> = {};
+for (const stock of [...rankings.stocks].sort((a, b) => (a.fileKey < b.fileKey ? -1 : 1))) {
+  const { t, c } = read<ChartFile>(`data/charts/${stock.fileKey}.json`);
+  charts[stock.fileKey] = { cal: calendarId(t), c };
 }
 
 /** `</` inside a string literal would close the enclosing <script> early. */
-const payload = JSON.stringify({ meta, rankings, correlation, charts }).replace(/<\//g, '<\\/');
+const payload = JSON.stringify({ meta, rankings, correlation, calendars, charts }).replace(/<\//g, '<\\/');
 
 const css = readFileSync(join(here, 'app.css'), 'utf8');
 // chartmath first: app.js closes over the global it defines.
@@ -89,7 +102,7 @@ const build = () => {
   writeFileSync(out, html);
 
   const mb = (html.length / 1024 / 1024).toFixed(2);
-  console.log(`dist/momentum.html — ${mb} MB · ${Object.keys(charts).length} charts · ${rankings.stocks.length} stocks`);
+  console.log(`dist/momentum.html — ${mb} MB · ${Object.keys(charts).length} charts · ${calendars.length} calendars · ${rankings.stocks.length} stocks`);
 };
 
 try {

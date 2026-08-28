@@ -57,17 +57,54 @@
   function top50(mode) {
     return D.rankings.stocks.slice().sort(function (a, b) { return rankOf(a, mode) - rankOf(b, mode); }).slice(0, 50);
   }
+  // Charts store a calendar id rather than their own dates: almost every
+  // symbol shares one 253-day trading calendar, and repeating it per symbol
+  // was more than half the payload. Rehydrated once, then cached.
+  var chartCache = {};
   function getChart(sym) {
     var st = bySymbol[sym];
     var key = st ? st.fileKey : sym.replace(/\./g, '-');
-    return D.charts[key] || null;
+    if (chartCache[key]) return chartCache[key];
+    var raw = D.charts[key];
+    if (!raw) return null;
+    chartCache[key] = { t: D.calendars[raw.cal], c: raw.c };
+    return chartCache[key];
   }
   function corrSet(mode) {
     for (var i = 0; i < D.correlation.sets.length; i++) if (D.correlation.sets[i].mode === mode) return D.correlation.sets[i];
     return null;
   }
+  /**
+   * Symbol-prefix first, then name substring. Someone typing "MU" wants Micron
+   * ahead of every name containing those letters, so an exact symbol sorts to
+   * the top and prefix matches ahead of name matches; ties fall back to rank.
+   */
+  function searchMatches(query) {
+    var q = query.trim().toUpperCase();
+    if (!q) return [];
+    var scored = [];
+    D.rankings.stocks.forEach(function (s) {
+      var sym = s.symbol.toUpperCase();
+      var name = s.name.toUpperCase();
+      var tier = sym === q ? 0
+        : sym.indexOf(q) === 0 ? 1
+        : name.indexOf(q) === 0 ? 2
+        : sym.indexOf(q) >= 0 ? 3
+        : name.indexOf(q) >= 0 ? 4
+        : -1;
+      if (tier >= 0) scored.push({ s: s, tier: tier });
+    });
+    scored.sort(function (a, b) {
+      return a.tier - b.tier || rankOf(a.s, S.mode) - rankOf(b.s, S.mode);
+    });
+    return scored.map(function (x) { return x.s; });
+  }
+
   function orderedSymbols(list) {
     if (!list) return [];
+    if (list.indexOf('search:') === 0) {
+      return searchMatches(list.slice(7)).map(function (s) { return s.symbol; });
+    }
     if (list === 'watchlist') {
       return S.watch.filter(function (s) { return bySymbol[s]; })
         .sort(function (a, b) { return rankOf(bySymbol[a], S.mode) - rankOf(bySymbol[b], S.mode); });
@@ -151,6 +188,37 @@
     w.appendChild(dot);
     return w;
   }
+  /**
+   * 6-1 momentum against 12-1: a bar left of centre means the recent half is
+   * weaker than the year, so the move is fading.
+   *
+   * Worth its own view because blending hides it. A name can sit near the top
+   * of the ranking on a huge 12-1 while its last six months are flat or
+   * negative -- the blend averages the two and reports a strong score for a
+   * trend that has already turned.
+   *
+   * Scaled by tanh rather than clipped: spreads run past 200 points either
+   * way, and a linear scale would peg most of the list at the ends. This is
+   * presentation only and changes no ranking.
+   */
+  var TREND_SCALE = 1.0; // spread, in annualised return, that reaches ~76% width
+  function trendBar(s) {
+    var w = h('div', 'trend');
+    w.appendChild(h('i', 'axis'));
+    var spread = s.m6 - s.m12;
+    var t = Math.tanh(spread / TREND_SCALE);
+    var half = 35;
+    var len = Math.max(1.5, Math.abs(t) * half);
+    var bar = h('i', 'fill');
+    bar.style.cssText = 'height:6px;top:10px;width:' + len.toFixed(1) + 'px;' +
+      (t >= 0 ? 'left:36px;' : 'left:' + (36 - len).toFixed(1) + 'px;') +
+      'background:var(--' + (t >= 0 ? 'pos' : 'neg') + ')';
+    w.appendChild(bar);
+    w.title = '6–1 ' + pct(s.m6) + ' vs 12–1 ' + pct(s.m12) +
+      ' — ' + (spread >= 0 ? 'accelerating' : 'fading');
+    return w;
+  }
+
   function rollingBars(s) {
     var w = h('div', 'rolling');
     w.appendChild(h('i', 'base'));
@@ -174,6 +242,7 @@
     row.appendChild(nc);
     var viz = h('span', 'viz');
     viz.appendChild(S.rowViz === 'impact' ? deltaChip(s.symbol)
+      : S.rowViz === 'trend' ? trendBar(s)
       : S.rowViz === 'range' ? rangeBar(s) : rollingBars(s));
     row.appendChild(viz);
     var pc = h('span', 'pricecol');
@@ -214,6 +283,10 @@
     // 31px heading repeating the label cost a row of stocks.
     var hdr = h('div', 'hdr');
     hdr.appendChild(h('div', 'sub', 'Top 50 of ' + D.meta.rankedCount + ' · ' + longDate(D.meta.asOf)));
+    var find = h('button', 'iconbtn', '⌕');
+    find.setAttribute('aria-label', 'Search all stocks');
+    find.onclick = function () { push({ screen: 'search', params: {} }); };
+    hdr.appendChild(find);
     var grid = h('button', 'iconbtn', '▦');
     grid.setAttribute('aria-label', 'Correlation and groups');
     grid.onclick = function () { push({ screen: 'correlation', params: {} }); };
@@ -404,6 +477,7 @@
     var vizCard = h('div', 'setcard');
     [['range', '52-week range', 'Low, high, and latest price'],
      ['rolling', 'Rolling blended score', 'Momentum score through time'],
+     ['trend', 'Accelerating or fading', '6–1 momentum against 12–1'],
      ['impact', 'Watchlist impact', 'What starring or dropping it does to your score']].forEach(function (opt) {
       var on = S.rowViz === opt[0];
       var row = h('button', 'setrow' + (on ? ' on' : ''));
@@ -414,6 +488,7 @@
       var prev = h('span', 'prev');
       var sample = top50(S.mode)[0];
       prev.appendChild(opt[0] === 'impact' ? deltaChip(sample.symbol)
+        : opt[0] === 'trend' ? trendBar(sample)
         : opt[0] === 'range' ? rangeBar(sample) : rollingBars(sample));
       row.appendChild(prev);
       row.appendChild(h('span', 'radio', on ? '◉' : '○'));
@@ -517,6 +592,7 @@
      ['Vol-adjusted', ratio(s.volAdj), s.volAdj >= 0 ? 'pos' : 'neg'],
      ['12–1 momentum', pct(s.m12), ''],
      ['6–1 momentum', pct(s.m6), ''],
+     ['6–1 vs 12–1', pct(s.m6 - s.m12), s.m6 >= s.m12 ? 'pos' : 'neg'],
      ['Volatility (126d)', (s.vol * 100).toFixed(1) + '%', ''],
      ['52-week range', money(s.wk52Low) + ' – ' + money(s.wk52High), ''],
      ['Rank · momentum', '#' + s.rankBlended, ''],
@@ -687,6 +763,65 @@
     return sc;
   }
 
+  // ---------- Search ----------
+  /**
+   * Reaches the whole ranked universe, not just the top 50. A name that has
+   * fallen out of the ranking is still one you may hold, and until now nothing
+   * could open it.
+   *
+   * The input keeps focus across keystrokes by re-rendering only the results
+   * list rather than the screen -- a full render would rebuild the field and
+   * drop the keyboard on every character.
+   */
+  function searchScreen(params) {
+    var sc = h('div', 'screen');
+    var thdr = h('div', 'thdr');
+    var bb = h('button', 'backbtn', '‹');
+    bb.setAttribute('aria-label', 'Back');
+    bb.onclick = back;
+    thdr.appendChild(bb);
+
+    var input = document.createElement('input');
+    input.className = 'searchbox';
+    input.type = 'search';
+    input.placeholder = 'Symbol or company';
+    input.autocapitalize = 'characters';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.value = params.q || '';
+    thdr.appendChild(input);
+    sc.appendChild(thdr);
+
+    var results = h('div', 'results');
+    sc.appendChild(results);
+
+    function paint() {
+      var q = input.value;
+      params.q = q; // survives a back-and-forward through the stack
+      results.textContent = '';
+      if (!q.trim()) {
+        results.appendChild(emptyState('⌕', 'Search ' + D.meta.rankedCount + ' stocks',
+          'Every ranked S&P 500 name, not just the top 50.'));
+        return;
+      }
+      var hits = searchMatches(q);
+      if (!hits.length) {
+        results.appendChild(emptyState('⌕', 'No match for “' + q.trim() + '”',
+          'Try a ticker symbol or part of a company name.'));
+        return;
+      }
+      hits.slice(0, 40).forEach(function (st) {
+        results.appendChild(stockRow(st, rankOf(st, S.mode), 'search:' + q));
+      });
+    }
+
+    input.oninput = paint;
+    paint();
+    // Autofocus after the screen is in the document, or iOS ignores it.
+    setTimeout(function () { input.focus(); }, 0);
+    return sc;
+  }
+
   // ---------- Correlation ----------
   var corrState = { focused: null, sel: null };
   function correlationScreen() {
@@ -715,6 +850,24 @@
       function (v) { S.mode = v; saveLS('texas.web.mode', v); corrState.focused = null; corrState.sel = null; render(); }
     ));
     sc.appendChild(sw);
+
+    // The same measure the watchlist carries, aimed at the ranking itself. A
+    // momentum list is prone to becoming one trade held fifty ways, and the
+    // matrix below shows that only to someone who already reads matrices.
+    var all = [];
+    set.tickers.forEach(function (t, i) {
+      var st = bySymbol[t];
+      if (st) all.push({ i: i, ret: st.blended, vol: st.vol });
+    });
+    if (all.length > 1) {
+      var rhoAll = Concentration.avgPairwiseCorr(set.matrix, all.map(function (m) { return m.i; }));
+      var betsAll = Concentration.effectiveBets(all.length, rhoAll);
+      var line = h('div', 'corr-conc');
+      line.appendChild(h('span', 'v num', betsAll.toFixed(1)));
+      line.appendChild(h('span', 't', 'independent bets across these ' + all.length +
+        ' names · avg ρ ' + ratio(rhoAll)));
+      sc.appendChild(line);
+    }
 
     var ro = h('div', 'corr-readout');
     function renderReadout() {
@@ -894,6 +1047,8 @@
       app.appendChild(tabBar());
     } else if (route.screen === 'ticker') {
       app.appendChild(tickerScreen(route.params, anim));
+    } else if (route.screen === 'search') {
+      app.appendChild(searchScreen(route.params));
     } else {
       app.appendChild(correlationScreen());
     }
