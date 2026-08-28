@@ -54,6 +54,16 @@ only then writes `data/`. If any check fails — a lopsided universe, an
 asymmetric correlation matrix, a ranked stock with no chart — it exits without
 writing, leaving the previous snapshot intact.
 
+Before overwriting, the refresh reads the old `rankings.json` and carries each
+symbol's ranks forward as `prevRankBlended`/`prevRankVolAdj`, which is what
+feeds the ▲/▼/new movement carets in the app. A first refresh has nothing to
+carry, so the carets stay blank until the second. The app also shows the
+snapshot's age in the Ranks header once it passes 8 days, heavier past 22.
+
+The full update flow is: ask Claude Code to refresh → `npm run refresh` →
+`npm run build:web` → republish `dist/momentum.html` to the same artifact URL.
+The home-screen icon picks up the new build on next open; nothing to re-add.
+
 Useful while iterating:
 
 | flag | effect |
@@ -89,14 +99,26 @@ feeds a ranking.
 
 ## Screens
 
-- **Ranks** — top 50 by blended momentum or its vol-adjusted equivalent. Each
-  row carries either a 52-week range bar or the rolling score, your choice in
-  Settings.
-- **Watchlist** — tap any star to add or remove; persists on the device.
+- **Ranks** — top 50 by blended momentum or its vol-adjusted equivalent, with
+  a toggle at the foot to show all 500. Each rank carries a movement caret
+  (▲/▼/new) against the previous refresh. The row visualisation is chosen in
+  Settings: a 52-week range bar, the rolling blended score, accelerating-or-
+  fading (6–1 momentum against 12–1 — red at the top of a momentum list means
+  the move is old), or watchlist impact.
+- **Search** — the magnifier on Ranks, over every ranked name, not just the
+  top 50. Exact symbol first, then symbol prefix, then company name, so "MU"
+  finds Micron rather than TMUS.
+- **Watchlist** — tap any star to add or remove; persists on the device. Opens
+  with a concentration card: the effective number of independent bets
+  (`n / (1 + (n−1)·ρ̄)`), a bar splitting the names across correlation groups,
+  and which single drop would help most. Each row shows what that name is
+  worth to the list — what dropping it would cost, or what starring it would
+  add — from the Elton–Gruber add rule evaluated at equal weight.
 - **Ticker** — the price line over 1M/3M/6M/12M. Changing window reshapes the
   existing line into the new horizon rather than replacing it: every window
   resamples to the same 253 points, so the two shapes interpolate. Drag for a
-  crosshair. Chevrons walk the list you arrived from without going back.
+  crosshair. Chevrons walk the list you arrived from without going back. The
+  stat grid includes 6–1 vs 12–1, the momentum-deceleration spread.
 
   Candles were cut. They could not morph — a window change alters the bar
   count, leaving nothing to interpolate — and every figure here comes from
@@ -104,6 +126,15 @@ feeds a ranking.
   Charts therefore ship close-only.
 - **Correlation** — the top-50 matrix with its clusters, reachable from the
   grid button on Ranks. Blue means moved together, amber means moved opposite.
+  The header states how many independent bets the whole top 50 amounts to.
+
+Watchlist and ranks-impact figures use correlations computed in the browser
+from the shipped close series — the same definition as the pipeline, and a
+test requires the recomputation to reproduce the shipped matrix exactly — so
+any searchable name is scoreable, not just the top 50. The precomputed matrix
+and clustering serve only the Correlation screen. Charts ship close-only with
+their trading calendars pooled (500 symbols share one 253-day calendar),
+which is what makes carrying the full universe cost ~1 MB.
 
 ## Tests
 
