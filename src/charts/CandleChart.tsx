@@ -1,13 +1,6 @@
 import { Canvas, Circle, Group, Line, Path, Skia, vec } from '@shopify/react-native-skia';
-import React, { useEffect, useMemo } from 'react';
-import {
-  Easing,
-  useDerivedValue,
-  useSharedValue,
-  withTiming,
-  type SharedValue,
-} from 'react-native-reanimated';
-import { motion } from '@/src/theme/tokens';
+import React, { useMemo } from 'react';
+import { useDerivedValue, type SharedValue } from 'react-native-reanimated';
 import { useTheme } from '@/src/theme/useTheme';
 import type { ChartFile } from '@/shared/types';
 import {
@@ -46,8 +39,8 @@ interface WindowGeometry {
  * earlier version rebuilt three Skia paths inside a per-frame worklet and
  * stored them wrapped in an object on a shared value, which allocated ~180
  * native objects a second and could tear down a path while the canvas still
- * held it. Switching windows now cross-fades between prebuilt paths, which is
- * the transform-only fallback the chart plan reserved for this case.
+ * held it. Window changes now swap prebuilt paths outright: the smooth rescale
+ * is traded for a chart that always draws, at full strength, immediately.
  */
 export function CandleChart({ chart, window: win, frame, activeIndex, crossOpacity }: Props) {
   const theme = useTheme();
@@ -92,14 +85,9 @@ export function CandleChart({ chart, window: win, frame, activeIndex, crossOpaci
 
   const geo = built[win];
 
-  // A short fade on window change: no per-frame allocation, no path swapped
-  // out from under a live draw.
-  const fade = useSharedValue(1);
-  useEffect(() => {
-    fade.value = 0;
-    fade.value = withTiming(1, { duration: motion.base, easing: Easing.out(Easing.cubic) });
-  }, [win, fade]);
-
+  // Drawn at full strength with no entrance animation: an opacity that depends
+  // on a timing animation completing renders the candles dim (or invisible) if
+  // that animation never runs.
   const { n, lo, hi, closes } = geo;
   const cx = useDerivedValue(() =>
     activeIndex.value < 0 ? -100 : xForBar(Math.min(activeIndex.value, n - 1), n, frame),
@@ -112,11 +100,9 @@ export function CandleChart({ chart, window: win, frame, activeIndex, crossOpaci
 
   return (
     <Canvas style={{ width: frame.width, height: frame.height }}>
-      <Group opacity={fade}>
-        <Path path={geo.wicks} style="stroke" strokeWidth={1} color={theme.colors.textTertiary} />
-        <Path path={geo.up} color={theme.colors.positive} />
-        <Path path={geo.down} color={theme.colors.negative} />
-      </Group>
+      <Path path={geo.wicks} style="stroke" strokeWidth={1} color={theme.colors.textTertiary} />
+      <Path path={geo.up} color={theme.colors.positive} />
+      <Path path={geo.down} color={theme.colors.negative} />
       <Group opacity={crossOpacity}>
         <Line p1={p1} p2={p2} strokeWidth={1} color={theme.colors.crosshair} />
         <Circle cx={cx} cy={cy} r={3.5} color={theme.colors.crosshair} />

@@ -1,5 +1,5 @@
 import { Canvas, Circle, Group, Line, LinearGradient, Path, Skia, vec } from '@shopify/react-native-skia';
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   Easing,
   interpolateColor,
@@ -88,8 +88,20 @@ export function LineChart({ chart, window: win, frame, activeIndex, crossOpacity
   const toColor = useSharedValue(colorFor(built[win].up));
   const progress = useSharedValue(1);
 
+  const mounted = useRef(false);
   useEffect(() => {
     const target = built[win];
+    if (!mounted.current) {
+      // First paint: settle immediately so the chart is never blank waiting on
+      // an animation that may not have started.
+      mounted.current = true;
+      fromPath.value = target.path;
+      toPath.value = target.path;
+      fromColor.value = colorFor(target.up);
+      toColor.value = colorFor(target.up);
+      progress.value = 1;
+      return;
+    }
     const mid =
       progress.value < 1
         ? (toPath.value.interpolate(fromPath.value, progress.value) ?? toPath.value)
@@ -111,9 +123,10 @@ export function LineChart({ chart, window: win, frame, activeIndex, crossOpacity
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [win, built, theme.dark]);
 
-  const linePath = useDerivedValue(
-    () => toPath.value.interpolate(fromPath.value, progress.value) ?? toPath.value,
-  );
+  const linePath = useDerivedValue(() => {
+    if (progress.value >= 1) return toPath.value;
+    return toPath.value.interpolate(fromPath.value, progress.value) ?? toPath.value;
+  });
   const areaPath = useDerivedValue(() => {
     const p = linePath.value.copy();
     p.lineTo(plotW, baseY);
