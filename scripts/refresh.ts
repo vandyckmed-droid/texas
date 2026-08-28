@@ -27,6 +27,7 @@ import type {
 } from '../shared/types.ts';
 import { adjustSeries, type AdjustedSeries } from './adjust.ts';
 import { fetchConstituents, fetchHistory, mapLimit, type FmpSource } from './fmp.ts';
+import { cleanName } from './names.ts';
 import { normalizeSectors } from './sectors.ts';
 import { round, writeSnapshot, type Snapshot } from './write.ts';
 
@@ -120,7 +121,7 @@ async function main(): Promise<void> {
     const cand: Candidate = {
       symbol: fmpSymbol.replaceAll('-', '.'),
       fileKey: fmpSymbol,
-      name: constituent.name,
+      name: cleanName(constituent.name),
       sector: sectorBySymbol.get(constituent.symbol)!,
       series,
     };
