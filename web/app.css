@@ -75,6 +75,9 @@ button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
 .rangebar{position:relative; width:72px; height:7px; display:flex; align-items:center}
 .rangebar .track{width:100%; height:3px; border-radius:1.5px; background:var(--fill)}
 .rangebar .dot{position:absolute; width:7px; height:7px; border-radius:50%; background:var(--text-2)}
+.trend{position:relative; width:72px; height:26px}
+.trend .axis{position:absolute; left:35.5px; top:6px; width:1px; height:14px; background:var(--text-3); opacity:.5}
+.trend i.fill{position:absolute; border-radius:1px}
 .rolling{position:relative; width:72px; height:26px}
 .rolling .base{position:absolute; top:12.5px; width:72px; height:1px; background:var(--fill)}
 .rolling i{position:absolute; border-radius:1px}
@@ -90,6 +93,12 @@ button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
 /* ticker (and the correlation header, which shares this row) */
 .thdr{display:flex; align-items:center; padding:2px 8px}
 .backbtn{padding:8px; font-size:22px; line-height:1}
+.searchbox{flex:1; min-width:0; margin:4px 12px 4px 4px; padding:9px 12px; border:0;
+  border-radius:9px; background:var(--fill); color:var(--text); font-size:16px;
+  font-family:inherit; -webkit-appearance:none; appearance:none}
+.searchbox::placeholder{color:var(--text-3)}
+.searchbox:focus{outline:2px solid var(--accent); outline-offset:-2px}
+.results{display:flex; flex-direction:column}
 .thdr .tt{flex:1; min-width:0}
 .tsym{font-size:20px; font-weight:600}
 .tname{font-size:12px; color:var(--text-2); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
@@ -125,6 +134,9 @@ button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
 .cr-pair{flex:1; font-size:16px; font-weight:600; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .cr-val{font-size:16px; font-weight:600}
 .cr-names{font-size:12px; color:var(--text-2); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.corr-conc{display:flex; align-items:baseline; gap:8px; padding:0 16px 12px}
+.corr-conc .v{font-size:22px; font-weight:700; letter-spacing:.2px}
+.corr-conc .t{flex:1; font-size:12px; color:var(--text-2); line-height:1.35}
 .heatwrap{padding:0 16px}
 .heatwrap canvas{display:block; width:100%; border-radius:2px}
 .legend{padding:12px 16px 0}
