@@ -44,6 +44,10 @@ function orderedSymbols(list: string | undefined, watchlist: string[], rankMode:
   if (list.startsWith('ranks:')) {
     return getTop50(list.slice(6) as RankMode).map((s) => s.symbol);
   }
+  if (list.startsWith('solo:')) {
+    const set = getCorrelation(list.slice(5) as RankMode);
+    if (set) return set.clusters.filter((cl) => cl.size === 1).map((cl) => set.tickers[cl.start]);
+  }
   if (list.startsWith('cluster:')) {
     const [, mode, idStr] = list.split(':');
     const set = getCorrelation(mode as RankMode);

@@ -1,8 +1,21 @@
 {
-  "asOf": "2026-08-28",
-  "generatedAt": "2026-08-28T04:10:48.563Z",
-  "universeCount": 120,
-  "rankedCount": 120,
-  "excluded": [],
-  "source": "mock"
+  "asOf": "2026-08-27",
+  "generatedAt": "2026-08-28T10:21:32.578Z",
+  "universeCount": 503,
+  "rankedCount": 500,
+  "excluded": [
+    {
+      "symbol": "HONA",
+      "reason": "short-history (52 bars, chart only)"
+    },
+    {
+      "symbol": "FDXF",
+      "reason": "short-history (65 bars, chart only)"
+    },
+    {
+      "symbol": "Q",
+      "reason": "short-history (210 bars, chart only)"
+    }
+  ],
+  "source": "fmp-stable"
 }
