@@ -1,11 +1,11 @@
 /**
- * Data contract shared by the refresh pipeline (scripts/, quant/) and the app (src/).
+ * Data contract shared by the refresh pipeline (scripts/, quant/) and the app (web/).
  * Everything the app renders is precomputed at refresh time into data/*.json;
  * the app performs no financial math beyond mapping values to pixels.
  */
 
 export type RankMode = 'blended' | 'volAdj';
-export type RowViz = 'range' | 'rolling';
+export type RowViz = 'range' | 'rolling' | 'impact';
 
 export const GICS_SECTORS = [
   'Information Technology',
