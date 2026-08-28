@@ -1,4 +1,4 @@
-import { Canvas, Circle, Group, Line, LinearGradient, Path, Skia, vec } from '@shopify/react-native-skia';
+import { Circle, Group, Line, LinearGradient, Path, Skia, vec } from '@shopify/react-native-skia';
 import React, { useEffect, useMemo, useRef } from 'react';
 import {
   Easing,
@@ -46,12 +46,21 @@ interface Props {
 }
 
 /**
- * Price line with gradient fill. Window changes morph the existing path into
- * the new one (Yahoo-style): every window is resampled to LINE_POINTS points,
- * so Skia path interpolation is structurally valid, and paths are prebuilt in
- * pixel space so shape and scale reshape together.
+ * Price line with gradient fill, as Skia elements for the parent's canvas.
+ *
+ * This deliberately does NOT own a <Canvas>. Each canvas allocates a native
+ * surface sized in device pixels — ~4 MB for this chart — and RN Skia releases
+ * it only when the JS wrapper is collected, which Hermes schedules on JS-heap
+ * pressure that a few megabytes of chart data never generate. Mounting a canvas
+ * per chart type meant every line/candle toggle leaked one surface until the OS
+ * killed the app. One canvas, owned by PriceChart, swaps these layers instead.
+ *
+ * Window changes morph the existing path into the new one (Yahoo-style): every
+ * window is resampled to LINE_POINTS points, so Skia path interpolation is
+ * structurally valid, and paths are built in pixel space so shape and scale
+ * reshape together.
  */
-export function LineChart({ chart, window: win, frame, activeIndex, crossOpacity }: Props) {
+export function LineLayer({ chart, window: win, frame, activeIndex, crossOpacity }: Props) {
   const theme = useTheme();
   const plotW = plotWidth(frame);
   const baseY = frame.height - frame.padBottom;
@@ -159,7 +168,7 @@ export function LineChart({ chart, window: win, frame, activeIndex, crossOpacity
   const p2 = useDerivedValue(() => vec(cx.value, frame.height - frame.padBottom));
 
   return (
-    <Canvas style={{ width: frame.width, height: frame.height }}>
+    <>
       <Path path={areaPath} style="fill">
         <LinearGradient
           start={vec(0, frame.padTop)}
@@ -180,6 +189,6 @@ export function LineChart({ chart, window: win, frame, activeIndex, crossOpacity
         <Circle cx={cx} cy={cy} r={6.5} color={`${theme.colors.crosshair}33`} />
         <Circle cx={cx} cy={cy} r={3.5} color={strokeColor} />
       </Group>
-    </Canvas>
+    </>
   );
 }

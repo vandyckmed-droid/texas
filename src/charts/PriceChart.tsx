@@ -1,3 +1,4 @@
+import { Canvas } from '@shopify/react-native-skia';
 import React, { useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -13,8 +14,8 @@ import { tick } from '@/src/theme/haptics';
 import { motion, typo, type Theme } from '@/src/theme/tokens';
 import { useTheme } from '@/src/theme/useTheme';
 import type { ChartFile } from '@/shared/types';
-import { CandleChart } from './CandleChart';
-import { LineChart } from './LineChart';
+import { CandleLayer } from './CandleChart';
+import { LineLayer } from './LineChart';
 import { barForX, barForXLine, padDomain, windowBars, yFor, type ChartFrame, type WindowKey } from './scales';
 import { PriceText } from '@/src/components/PriceText';
 import { formatPrice } from '@/src/data/format';
@@ -125,13 +126,19 @@ export function PriceChart({ chart, window: win, kind, width, height, onReadout 
             </View>
           ))}
         </Animated.View>
-        {/* Rendered without enter/exit layout animations: those keep a Skia
-            canvas mounted while it is being torn down, so the outgoing chart
-            can still be drawing as its native paths are released. Each chart
-            fades itself in instead. */}
-        <View style={StyleSheet.absoluteFill}>
-          {kind === 'line' ? <LineChart {...chartProps} /> : <CandleChart {...chartProps} />}
-        </View>
+        {/* ONE canvas, mounted for the life of this screen. Line and candles
+            are element layers inside it, not separate canvases: a canvas holds
+            a native surface of width × height × scale² × 4 bytes (~4 MB here)
+            that RN Skia frees only when the JS wrapper is collected, and Hermes
+            collects on JS-heap pressure this app never creates. Swapping
+            canvases — per chart type, or per ticker via a remount — therefore
+            piled up surfaces until the OS killed the process. Layers inside a
+            stable canvas cost kilobytes of path data instead. For the same
+            reason nothing here gets an enter/exit layout animation, which would
+            keep an outgoing canvas alive during teardown. */}
+        <Canvas style={[StyleSheet.absoluteFill, { width, height }]}>
+          {kind === 'line' ? <LineLayer {...chartProps} /> : <CandleLayer {...chartProps} />}
+        </Canvas>
       </View>
     </GestureDetector>
   );

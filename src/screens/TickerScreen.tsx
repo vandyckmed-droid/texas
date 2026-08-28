@@ -3,7 +3,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeIn } from 'react-native-reanimated';
 import { EmptyState } from '@/src/components/EmptyState';
 import { PriceText } from '@/src/components/PriceText';
 import { Segmented } from '@/src/components/Segmented';
@@ -158,10 +157,14 @@ export function TickerScreen() {
         )}
       </View>
 
-      {/* A plain fade, not a horizontal slide: sliding translated the whole
-          body including the chart canvas, which read as a jerk sideways rather
-          than a transition. */}
-      <Animated.View key={stock.symbol} entering={FadeIn.duration(160)} style={{ flex: 1 }}>
+      {/* No transition animation, and deliberately no key on this subtree.
+          Keying it by symbol remounted PriceChart on every prev/next tap, which
+          destroyed and reallocated a ~4 MB Skia surface each time — the app died
+          once enough of those had piled up unreclaimed. The chart canvas now
+          survives navigation and only its data changes; the price line morphs
+          from the old ticker's shape into the new one, which reads as a smoother
+          transition than the fade it replaces. */}
+      <View style={{ flex: 1 }}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: space.s24 }}>
           <View style={s.priceBlock}>
             <PriceText style={s.bigPrice}>{formatPrice(shownClose)}</PriceText>
@@ -200,7 +203,7 @@ export function TickerScreen() {
             {statCell(s, 'Sector', stock.sector)}
           </View>
         </ScrollView>
-      </Animated.View>
+      </View>
     </View>
   );
 }

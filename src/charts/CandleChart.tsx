@@ -1,4 +1,4 @@
-import { Canvas, Circle, Group, Line, Path, Skia, vec } from '@shopify/react-native-skia';
+import { Circle, Group, Line, Path, Skia, vec } from '@shopify/react-native-skia';
 import React, { useMemo } from 'react';
 import { useDerivedValue, type SharedValue } from 'react-native-reanimated';
 import { useTheme } from '@/src/theme/useTheme';
@@ -32,16 +32,19 @@ interface WindowGeometry {
 }
 
 /**
- * OHLC candles.
+ * OHLC candles, as Skia elements for the parent's canvas.
  *
- * Geometry for every window is built once, on mount, and simply swapped — the
- * earlier version rebuilt three Skia paths inside a per-frame worklet and
- * stored them wrapped in an object on a shared value, which allocated ~180
- * native objects a second and could tear down a path while the canvas still
- * held it. Window changes now swap prebuilt paths outright: the smooth rescale
- * is traded for a chart that always draws, at full strength, immediately.
+ * Like LineLayer this owns no <Canvas>: see the note there on why a canvas per
+ * chart type leaked a ~4 MB native surface on every line/candle toggle.
+ *
+ * Geometry is built in a memo rather than a worklet — the earlier version
+ * rebuilt three Skia paths inside a per-frame worklet and stored them wrapped
+ * in an object on a shared value, which allocated ~180 native objects a second
+ * and could tear down a path while the canvas still held it. Window changes
+ * swap prebuilt paths outright: the smooth rescale is traded for a chart that
+ * always draws, at full strength, immediately.
  */
-export function CandleChart({ chart, window: win, frame, activeIndex, crossOpacity }: Props) {
+export function CandleLayer({ chart, window: win, frame, activeIndex, crossOpacity }: Props) {
   const theme = useTheme();
   const plotW = plotWidth(frame);
   const len = chart.c.length;
@@ -92,7 +95,7 @@ export function CandleChart({ chart, window: win, frame, activeIndex, crossOpaci
   const p2 = useDerivedValue(() => vec(cx.value, frame.height - frame.padBottom));
 
   return (
-    <Canvas style={{ width: frame.width, height: frame.height }}>
+    <>
       <Path path={geo.wicks} style="stroke" strokeWidth={1} color={theme.colors.textTertiary} />
       <Path path={geo.up} color={theme.colors.positive} />
       <Path path={geo.down} color={theme.colors.negative} />
@@ -100,6 +103,6 @@ export function CandleChart({ chart, window: win, frame, activeIndex, crossOpaci
         <Line p1={p1} p2={p2} strokeWidth={1} color={theme.colors.crosshair} />
         <Circle cx={cx} cy={cy} r={3.5} color={theme.colors.crosshair} />
       </Group>
-    </Canvas>
+    </>
   );
 }
