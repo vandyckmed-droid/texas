@@ -7,7 +7,6 @@ import {
   padDomain,
   plotWidth,
   windowBars,
-  WINDOWS,
   xForBar,
   yFor,
   type ChartFrame,
@@ -47,43 +46,37 @@ export function CandleChart({ chart, window: win, frame, activeIndex, crossOpaci
   const plotW = plotWidth(frame);
   const len = chart.c.length;
 
-  const built = useMemo(() => {
-    const out = {} as Record<WindowKey, WindowGeometry>;
-    for (const { key } of WINDOWS) {
-      const n = windowBars(key, len);
-      const start = len - n;
-      const lows = chart.l.slice(start);
-      const highs = chart.h.slice(start);
-      let min = Infinity;
-      let max = -Infinity;
-      for (let i = 0; i < n; i++) {
-        if (lows[i] < min) min = lows[i];
-        if (highs[i] > max) max = highs[i];
-      }
-      const [lo, hi] = padDomain(min, max);
-      const slot = plotW / n;
-      const bodyW = Math.max(0.8, Math.min(slot * 0.72, slot - 0.6));
-      const wicks = Skia.Path.Make();
-      const up = Skia.Path.Make();
-      const down = Skia.Path.Make();
-      for (let k = 0; k < n; k++) {
-        const i = start + k;
-        const x = (k + 0.5) * slot;
-        wicks.moveTo(x, yFor(chart.h[i], lo, hi, frame));
-        wicks.lineTo(x, yFor(chart.l[i], lo, hi, frame));
-        const yO = yFor(chart.o[i], lo, hi, frame);
-        const yC = yFor(chart.c[i], lo, hi, frame);
-        const target = chart.c[i] >= chart.o[i] ? up : down;
-        target.addRect(
-          Skia.XYWHRect(x - bodyW / 2, Math.min(yO, yC), bodyW, Math.max(1, Math.abs(yO - yC))),
-        );
-      }
-      out[key] = { wicks, up, down, lo, hi, n, closes: chart.c.slice(start) };
+  // Only the window on screen is built: holding all four alive meant twelve
+  // Skia paths per ticker, which accumulated when flicking through names.
+  const geo = useMemo<WindowGeometry>(() => {
+    const n = windowBars(win, len);
+    const start = len - n;
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i = start; i < len; i++) {
+      if (chart.l[i] < min) min = chart.l[i];
+      if (chart.h[i] > max) max = chart.h[i];
     }
-    return out;
-  }, [chart, len, plotW, frame]);
-
-  const geo = built[win];
+    const [lo, hi] = padDomain(min, max);
+    const slot = plotW / n;
+    const bodyW = Math.max(0.8, Math.min(slot * 0.72, slot - 0.6));
+    const wicks = Skia.Path.Make();
+    const up = Skia.Path.Make();
+    const down = Skia.Path.Make();
+    for (let k = 0; k < n; k++) {
+      const i = start + k;
+      const x = (k + 0.5) * slot;
+      wicks.moveTo(x, yFor(chart.h[i], lo, hi, frame));
+      wicks.lineTo(x, yFor(chart.l[i], lo, hi, frame));
+      const yO = yFor(chart.o[i], lo, hi, frame);
+      const yC = yFor(chart.c[i], lo, hi, frame);
+      const target = chart.c[i] >= chart.o[i] ? up : down;
+      target.addRect(
+        Skia.XYWHRect(x - bodyW / 2, Math.min(yO, yC), bodyW, Math.max(1, Math.abs(yO - yC))),
+      );
+    }
+    return { wicks, up, down, lo, hi, n, closes: chart.c.slice(start) };
+  }, [chart, win, len, plotW, frame]);
 
   // Drawn at full strength with no entrance animation: an opacity that depends
   // on a timing animation completing renders the candles dim (or invisible) if

@@ -17,7 +17,6 @@ import {
   plotWidth,
   resampleToN,
   windowBars,
-  WINDOWS,
   yFor,
   type ChartFrame,
   type WindowKey,
@@ -57,40 +56,37 @@ export function LineChart({ chart, window: win, frame, activeIndex, crossOpacity
   const plotW = plotWidth(frame);
   const baseY = frame.height - frame.padBottom;
 
+  // Only the window on screen is built. Building all four kept four Skia paths
+  // alive per ticker, and flicking through names with prev/next piled them up
+  // faster than they could be collected. The morph still works because the
+  // outgoing shape already lives in fromPath.
   const built = useMemo(() => {
-    const out = {} as Record<
-      WindowKey,
-      { path: ReturnType<typeof Skia.Path.Make>; lo: number; hi: number; up: boolean; n: number }
-    >;
-    for (const { key } of WINDOWS) {
-      const n = windowBars(key, chart.c.length);
-      const slice = chart.c.slice(chart.c.length - n);
-      const [lo, hi] = padDomain(Math.min(...slice), Math.max(...slice));
-      const pts = resampleToN(slice, LINE_POINTS);
-      const path = Skia.Path.Make();
-      pts.forEach((v, k) => {
-        const x = (k / (LINE_POINTS - 1)) * plotW;
-        const y = yFor(v, lo, hi, frame);
-        if (k === 0) path.moveTo(x, y);
-        else path.lineTo(x, y);
-      });
-      out[key] = { path, lo, hi, up: slice[n - 1] >= slice[0], n };
-    }
-    return out;
+    const n = windowBars(win, chart.c.length);
+    const slice = chart.c.slice(chart.c.length - n);
+    const [lo, hi] = padDomain(Math.min(...slice), Math.max(...slice));
+    const pts = resampleToN(slice, LINE_POINTS);
+    const path = Skia.Path.Make();
+    pts.forEach((v, k) => {
+      const x = (k / (LINE_POINTS - 1)) * plotW;
+      const y = yFor(v, lo, hi, frame);
+      if (k === 0) path.moveTo(x, y);
+      else path.lineTo(x, y);
+    });
+    return { path, lo, hi, up: slice[n - 1] >= slice[0], n };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chart, frame.width, frame.height]);
+  }, [chart, win, frame.width, frame.height]);
 
   const colorFor = (up: boolean) => (up ? theme.colors.positive : theme.colors.negative);
 
-  const fromPath = useSharedValue(built[win].path);
-  const toPath = useSharedValue(built[win].path);
-  const fromColor = useSharedValue(colorFor(built[win].up));
-  const toColor = useSharedValue(colorFor(built[win].up));
+  const fromPath = useSharedValue(built.path);
+  const toPath = useSharedValue(built.path);
+  const fromColor = useSharedValue(colorFor(built.up));
+  const toColor = useSharedValue(colorFor(built.up));
   const progress = useSharedValue(1);
 
   const mounted = useRef(false);
   useEffect(() => {
-    const target = built[win];
+    const target = built;
     if (!mounted.current) {
       // First paint: settle immediately so the chart is never blank waiting on
       // an animation that may not have started.
@@ -121,7 +117,7 @@ export function LineChart({ chart, window: win, frame, activeIndex, crossOpacity
       easing: Easing.out(Easing.cubic),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [win, built, theme.dark]);
+  }, [built, theme.dark]);
 
   const linePath = useDerivedValue(() => {
     if (progress.value >= 1) return toPath.value;
@@ -151,7 +147,7 @@ export function LineChart({ chart, window: win, frame, activeIndex, crossOpacity
   ]);
 
   // Crosshair snaps to real bars of the current window.
-  const { lo, hi, n } = built[win];
+  const { lo, hi, n } = built;
   const closes = chart.c.slice(chart.c.length - n);
   const cx = useDerivedValue(() =>
     activeIndex.value < 0 ? -100 : (activeIndex.value / Math.max(1, n - 1)) * plotW,
