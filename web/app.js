@@ -173,7 +173,8 @@
     nc.appendChild(h('div', 'nm', s.name));
     row.appendChild(nc);
     var viz = h('span', 'viz');
-    viz.appendChild(S.rowViz === 'range' ? rangeBar(s) : rollingBars(s));
+    viz.appendChild(S.rowViz === 'impact' ? deltaChip(s.symbol)
+      : S.rowViz === 'range' ? rangeBar(s) : rollingBars(s));
     row.appendChild(viz);
     var pc = h('span', 'pricecol');
     pc.appendChild(h('div', 'px num', money(s.price)));
@@ -233,6 +234,72 @@
 
   // ---------- Watchlist ----------
   /**
+   * The watchlist expressed against the current mode's correlation matrix,
+   * or null when fewer than one member is covered by it. Members carry the
+   * matrix index plus the return and volatility the portfolio maths needs.
+   */
+  function heldBook() {
+    var set = corrSet(S.mode);
+    if (!set) return null;
+    var pos = {};
+    for (var i = 0; i < set.tickers.length; i++) pos[set.tickers[i]] = i;
+    var members = [];
+    S.watch.forEach(function (sym) {
+      var st = bySymbol[sym];
+      if (!st || pos[sym] === undefined) return;
+      members.push({ i: pos[sym], ret: st.blended, vol: st.vol, symbol: sym });
+    });
+    return members.length ? { set: set, pos: pos, members: members } : null;
+  }
+
+  /**
+   * What this name is worth to the watchlist, in points of its score.
+   *
+   * One polarity for both cases, which matters more than it looks: for a name
+   * you hold this is what you would LOSE by dropping it, and for one you do
+   * not it is what you would GAIN by adding it. Reporting the removal delta
+   * raw would make a green "+" mean "drop me" on one screen and "star me" on
+   * the other. Positive always means the name earns its place.
+   *
+   * Null where the answer is undefined -- an empty book, a symbol outside this
+   * mode's top 50, or the last holding, which cannot be reduced further.
+   */
+  function worthOf(sym) {
+    var book = heldBook();
+    if (!book || book.pos[sym] === undefined) return null;
+    var idx = -1;
+    for (var k = 0; k < book.members.length; k++) if (book.members[k].symbol === sym) { idx = k; break; }
+    if (idx >= 0) {
+      var drop = Concentration.deltaOnRemove(book.set.matrix, book.members, idx);
+      return drop === null ? null : -drop;
+    }
+    var st = bySymbol[sym];
+    if (!st) return null;
+    return Concentration.deltaOnAdd(book.set.matrix, book.members,
+      { i: book.pos[sym], ret: st.blended, vol: st.vol });
+  }
+
+  function deltaChip(sym) {
+    var d = worthOf(sym);
+    var el = h('div', 'delta num');
+    if (d === null) { el.className = 'delta num none'; el.textContent = '·'; return el; }
+    // Anything that rounds to zero is neutral, not negative: "−0.00" is noise.
+    if (Math.abs(d) < 0.005) {
+      el.className = 'delta num none';
+      el.textContent = '0.00';
+      el.title = sym + ' makes no material difference either way';
+      return el;
+    }
+    var sign = d > 0 ? '+' : '−';
+    el.textContent = sign + Math.abs(d).toFixed(2);
+    el.className = 'delta num ' + (d > 0 ? 'pos' : 'neg');
+    el.title = S.watch.indexOf(sym) >= 0
+      ? 'Dropping ' + sym + ' would move your score by ' + (d >= 0 ? '−' : '+') + Math.abs(d).toFixed(2)
+      : 'Starring ' + sym + ' would move your score by ' + sign + Math.abs(d).toFixed(2);
+    return el;
+  }
+
+  /**
    * How much of one bet the watchlist actually is. Counting names overstates
    * diversification when they move together, so the headline is the effective
    * number of independent bets; the bar shows how the names split across the
@@ -279,6 +346,22 @@
     box.appendChild(h('div', 'conc-note', big.symbols.length < 2
       ? 'No two of these move as a group — ' + split.groups.length + ' separate bets.'
       : big.symbols.length + ' of them move as one: ' + big.symbols.join(' · ')));
+
+    // Which one to drop, rather than leaving the reader to try each in turn.
+    var book = heldBook();
+    if (book && book.members.length > 1) {
+      var best = null;
+      book.members.forEach(function (m, k) {
+        var d = Concentration.deltaOnRemove(set.matrix, book.members, k);
+        if (d !== null && (best === null || d > best.d)) best = { sym: m.symbol, d: d };
+      });
+      if (best && best.d > 0.005) {
+        box.appendChild(h('div', 'conc-drop',
+          'Dropping ' + best.sym + ' would help most: +' + best.d.toFixed(2)));
+      } else if (best) {
+        box.appendChild(h('div', 'conc-drop', 'Every name is currently earning its place.'));
+      }
+    }
     return box;
   }
 
@@ -302,7 +385,13 @@
     var list = h('div');
     present.forEach(function (sym) {
       var s = bySymbol[sym];
-      list.appendChild(stockRow(s, rankOf(s, S.mode), 'watchlist', renderKeepingScroll));
+      var r = stockRow(s, rankOf(s, S.mode), 'watchlist', renderKeepingScroll);
+      if (S.rowViz !== 'impact') {
+        var viz = r.querySelector('.viz');
+        viz.textContent = '';
+        viz.appendChild(deltaChip(sym));
+      }
+      list.appendChild(r);
     });
     sc.appendChild(list);
     return sc;
@@ -314,7 +403,8 @@
     sc.appendChild(h('div', 'sect', 'ROW VISUALIZATION'));
     var vizCard = h('div', 'setcard');
     [['range', '52-week range', 'Low, high, and latest price'],
-     ['rolling', 'Rolling blended score', 'Momentum score through time']].forEach(function (opt) {
+     ['rolling', 'Rolling blended score', 'Momentum score through time'],
+     ['impact', 'Watchlist impact', 'What starring or dropping it does to your score']].forEach(function (opt) {
       var on = S.rowViz === opt[0];
       var row = h('button', 'setrow' + (on ? ' on' : ''));
       var sl = h('span', 'sl');
@@ -323,7 +413,8 @@
       row.appendChild(sl);
       var prev = h('span', 'prev');
       var sample = top50(S.mode)[0];
-      prev.appendChild(opt[0] === 'range' ? rangeBar(sample) : rollingBars(sample));
+      prev.appendChild(opt[0] === 'impact' ? deltaChip(sample.symbol)
+        : opt[0] === 'range' ? rangeBar(sample) : rollingBars(sample));
       row.appendChild(prev);
       row.appendChild(h('span', 'radio', on ? '◉' : '○'));
       row.onclick = function () { haptic(); S.rowViz = opt[0]; saveLS('texas.web.rowViz', opt[0]); render(); };

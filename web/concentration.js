@@ -73,10 +73,69 @@ var Concentration = (function () {
     return { groups: groups, covered: covered, uncovered: uncovered, index: pos };
   }
 
+  /**
+   * Equal-weighted portfolio statistics for a set of holdings.
+   *
+   * `members` are {i, ret, vol}: i indexes the correlation matrix, ret is the
+   * annualised blended momentum, vol the annualised realised volatility.
+   *
+   * Return is the mean of the members' returns. Variance is the full double
+   * sum (1/n^2) * sum_i sum_j s_i s_j rho_ij -- averaging the members' vols
+   * would assume they move together and overstate risk badly for a mixed set.
+   * score is return over volatility: the same vol-adjusted ratio the app ranks
+   * by, so a portfolio score is directly comparable to a single stock's.
+   */
+  function portfolioStats(matrix, members) {
+    var n = members.length;
+    if (!n) return null;
+    var ret = 0;
+    for (var k = 0; k < n; k++) ret += members[k].ret;
+    ret /= n;
+
+    var varSum = 0;
+    for (var a = 0; a < n; a++) {
+      for (var b = 0; b < n; b++) {
+        var rho = a === b ? 1 : matrix[members[a].i][members[b].i];
+        if (!isFinite(rho)) rho = 0;
+        varSum += members[a].vol * members[b].vol * rho;
+      }
+    }
+    var vol = Math.sqrt(Math.max(0, varSum)) / n;
+    return { ret: ret, vol: vol, score: vol > 0 ? ret / vol : 0, n: n };
+  }
+
+  /**
+   * Change in the portfolio's score from adding `candidate` to `held`.
+   *
+   * This is the decision the textbook rule (add when SR_new > SR_p * rho(new,p))
+   * resolves to, evaluated directly on the equal-weighted book the reader
+   * actually holds rather than on an optimally re-weighted one. Positive means
+   * the name earns its place; negative means skip it however high it ranks.
+   */
+  function deltaOnAdd(matrix, held, candidate) {
+    var base = portfolioStats(matrix, held);
+    var next = portfolioStats(matrix, held.concat([candidate]));
+    if (!base || !next) return null;
+    return next.score - base.score;
+  }
+
+  /** Change in the portfolio's score from dropping the member at `pos`. */
+  function deltaOnRemove(matrix, held, pos) {
+    if (held.length < 2) return null;
+    var base = portfolioStats(matrix, held);
+    var rest = held.slice(0, pos).concat(held.slice(pos + 1));
+    var next = portfolioStats(matrix, rest);
+    if (!base || !next) return null;
+    return next.score - base.score;
+  }
+
   return {
     avgPairwiseCorr: avgPairwiseCorr,
     effectiveBets: effectiveBets,
     groupsOf: groupsOf,
+    portfolioStats: portfolioStats,
+    deltaOnAdd: deltaOnAdd,
+    deltaOnRemove: deltaOnRemove,
   };
 })();
 
