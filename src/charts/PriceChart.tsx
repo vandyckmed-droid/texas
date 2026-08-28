@@ -15,7 +15,7 @@ import { useTheme } from '@/src/theme/useTheme';
 import type { ChartFile } from '@/shared/types';
 import { CandleChart } from './CandleChart';
 import { LineChart } from './LineChart';
-import { barForX, barForXLine, padDomain, windowBars, type ChartFrame, type WindowKey } from './scales';
+import { barForX, barForXLine, padDomain, windowBars, yFor, type ChartFrame, type WindowKey } from './scales';
 import { PriceText } from '@/src/components/PriceText';
 import { formatPrice } from '@/src/data/format';
 
@@ -89,18 +89,23 @@ export function PriceChart({ chart, window: win, kind, width, height, onReadout 
     },
   );
 
-  // y-axis labels for the settled window/kind domain.
+  // y-axis labels: the window's REAL high, midpoint and low, each placed at its
+  // true position inside the padded domain. Labelling the padded bounds instead
+  // prints prices the stock never traded at — and on a wide range the padding
+  // can push the bottom label below zero.
   const labels = useMemo(() => {
     const values =
       kind === 'line'
         ? chart.c.slice(chart.c.length - n)
         : [...chart.l.slice(chart.c.length - n), ...chart.h.slice(chart.c.length - n)];
-    const [lo, hi] = padDomain(Math.min(...values), Math.max(...values));
-    return [hi, (hi + lo) / 2, lo].map((v, i) => ({
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const [lo, hi] = padDomain(min, max);
+    return [max, (min + max) / 2, min].map((v) => ({
       value: formatPrice(v),
-      y: frame.padTop + (i / 2) * (height - frame.padTop - frame.padBottom),
+      y: yFor(v, lo, hi, frame),
     }));
-  }, [chart, n, kind, frame, height]);
+  }, [chart, n, kind, frame]);
 
   const chartProps = { chart, window: win, frame, activeIndex, crossOpacity };
 
@@ -158,7 +163,6 @@ const styles = (theme: Theme) =>
       flex: 1,
       height: StyleSheet.hairlineWidth,
       backgroundColor: theme.colors.separator,
-      marginTop: 12,
     },
     gridLabel: {
       width: LABEL_GUTTER,
