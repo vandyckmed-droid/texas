@@ -18,6 +18,15 @@ export interface ThemeColors {
   positive: string;
   negative: string;
   crosshair: string;
+  /**
+   * Diverging scale for the correlation heatmap. Deliberately not the
+   * positive/negative pair: those mean gain/loss, and a matrix full of green
+   * would read as "good" when high correlation is the concentration risk the
+   * screen exists to surface. Blue↔amber is CVD-safe and scoped to that screen.
+   */
+  corrPositive: string;
+  corrNegative: string;
+  corrNeutral: string;
 }
 
 export interface Theme {
@@ -39,6 +48,9 @@ export const lightTheme: Theme = {
     positive: '#00953F',
     negative: '#E5484D',
     crosshair: '#6C7079',
+    corrPositive: '#1F5FA8',
+    corrNegative: '#B75A17',
+    corrNeutral: '#EEF0F3',
   },
 };
 
@@ -56,6 +68,11 @@ export const darkTheme: Theme = {
     positive: '#00D264',
     negative: '#FF6369',
     crosshair: '#9BA1AC',
+    // Dark poles are selected against the near-black surface, not a flipped
+    // light ramp: each arm still runs monotonically from midpoint to pole.
+    corrPositive: '#5AA9FF',
+    corrNegative: '#F0A055',
+    corrNeutral: '#1A1A21',
   },
 };
 

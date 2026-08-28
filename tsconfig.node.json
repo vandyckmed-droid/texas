@@ -20,6 +20,6 @@
     "quant/**/*.ts",
     "shared/**/*.ts",
     "src/charts/__tests__/**/*.ts",
-    "src/charts/scales.ts"
+    "src/charts/*.ts"
   ]
 }
