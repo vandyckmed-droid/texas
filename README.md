@@ -1,7 +1,7 @@
 # Momentum
 
-A personal iPhone app that ranks the S&P 500 by momentum. Expo Go + React
-Native + TypeScript.
+A personal iPhone app that ranks the S&P 500 by momentum. It is a single
+self-contained HTML file you add to your home screen.
 
 ## How it works
 
@@ -13,7 +13,7 @@ Nothing updates on its own — no intraday quotes, no scheduled jobs, no backend
 scripts/   fetch from Financial Modeling Prep, validate, adjust, emit
 quant/     the maths — momentum, volatility, correlation, clustering
 data/      the generated snapshot, committed (this is what the app reads)
-src/, app/ the app itself — screens, charts, theme
+web/       the app itself — screens, charts, theme, and the build that inlines them
 ```
 
 `shared/types.ts` is the contract between those layers.
@@ -22,13 +22,21 @@ src/, app/ the app itself — screens, charts, theme
 
 ```bash
 npm install
-npx expo start          # scan the QR with Expo Go on your iPhone
+npm run build:web       # -> dist/momentum.html
 ```
 
-Expo Go on the App Store tracks **SDK 54**, which is what this targets. Install
-native-adjacent packages with `npx expo install` (never a bare `npm install
-<pkg>`) so versions keep matching the Expo Go binary, and check with `npx
-expo-doctor`.
+Open that file in any browser. Everything — data, styles, behaviour, the
+home-screen icon — is inlined into it, so the page makes no network requests
+after it loads and works offline once cached.
+
+On an iPhone: open the published page in **Safari**, then Share → Add to Home
+Screen. It launches full-screen with no browser chrome.
+
+There was an Expo Go / React Native build of this. It was removed: Skia,
+Reanimated and worklets are three native runtimes with manual memory
+semantics, and canvas surfaces churned faster than the JS collector had reason
+to reclaim them, which killed the app under normal use. The web build has no
+equivalent failure mode, and `git log` still has the native one.
 
 ## Refreshing the data
 
@@ -85,10 +93,15 @@ feeds a ranking.
   row carries either a 52-week range bar or the rolling score, your choice in
   Settings.
 - **Watchlist** — tap any star to add or remove; persists on the device.
-- **Ticker** — price line or OHLC candles over 1M/3M/6M/12M. Changing window
-  reshapes the existing line into the new horizon rather than replacing it.
-  Long-press and drag for a crosshair. Chevrons walk the list you arrived from
-  without going back.
+- **Ticker** — the price line over 1M/3M/6M/12M. Changing window reshapes the
+  existing line into the new horizon rather than replacing it: every window
+  resamples to the same 253 points, so the two shapes interpolate. Drag for a
+  crosshair. Chevrons walk the list you arrived from without going back.
+
+  Candles were cut. They could not morph — a window change alters the bar
+  count, leaving nothing to interpolate — and every figure here comes from
+  adjusted closes, with the intraday range already shown as the 52-week range.
+  Charts therefore ship close-only.
 - **Correlation** — the top-50 matrix with its clusters, reachable from the
   grid button on Ranks. Blue means moved together, amber means moved opposite.
 
@@ -97,10 +110,10 @@ feeds a ranking.
 ```bash
 npm test        # quant + chart geometry
 npm run typecheck
-npm run lint
 ```
 
 The tests cover the parts where being wrong is silent: momentum on synthetic
 series with known closed-form answers, the skipped month actually being
 skipped, cluster recovery on planted blocks, and the colour scale's
-monotonicity.
+monotonicity. `web/chartmath.js` is the code the browser actually runs, not a
+copy of it, so those tests cover what ships.

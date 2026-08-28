@@ -58,7 +58,10 @@ for (const key of [...reachable].sort()) {
 const payload = JSON.stringify({ meta, rankings, correlation, charts }).replace(/<\//g, '<\\/');
 
 const css = readFileSync(join(here, 'app.css'), 'utf8');
-const js = readFileSync(join(here, 'app.js'), 'utf8');
+// chartmath first: app.js closes over the global it defines.
+const js = ['chartmath.js', 'app.js']
+  .map((f) => readFileSync(join(here, f), 'utf8'))
+  .join('\n');
 
 const build = () => {
   const icon = renderIcon();

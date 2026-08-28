@@ -90,47 +90,15 @@
     return [];
   }
 
-  // ---------- chart maths (mirrors src/charts/scales.ts) ----------
-  var WINDOWS = { '1M': 21, '3M': 63, '6M': 126, '12M': 1e9 };
-  var LINE_POINTS = 253;
-  function windowBars(key, avail) { return Math.min(WINDOWS[key], avail); }
-  function resampleToN(values, n) {
-    var m = values.length, out = new Array(n);
-    if (m === 0) { for (var z = 0; z < n; z++) out[z] = 0; return out; }
-    if (m === 1) { for (var z1 = 0; z1 < n; z1++) out[z1] = values[0]; return out; }
-    for (var i = 0; i < n; i++) {
-      var pos = (i / (n - 1)) * (m - 1), lo = Math.floor(pos), hi = Math.min(m - 1, lo + 1), f = pos - lo;
-      out[i] = values[lo] * (1 - f) + values[hi] * f;
-    }
-    return out;
-  }
-  function padDomain(lo, hi) {
-    var span = hi - lo;
-    if (span <= 0) { var pad = Math.max(1e-6, Math.abs(hi) * 0.01); return [lo - pad, hi + pad]; }
-    return [lo - span * 0.06, hi + span * 0.06];
-  }
-  function toRgb(c) {
-    if (c[0] === '#') return [parseInt(c.slice(1,3),16), parseInt(c.slice(3,5),16), parseInt(c.slice(5,7),16)];
-    var m = c.match(/\d+/g);
-    return m ? [+m[0], +m[1], +m[2]] : [128, 128, 128];
-  }
-  function withAlpha(c, a) { var r = toRgb(c); return 'rgba(' + r[0] + ',' + r[1] + ',' + r[2] + ',' + a + ')'; }
-  function lerpColor(a, b, t) {
-    var A = toRgb(a), B = toRgb(b);
-    return 'rgb(' + Math.round(A[0]+(B[0]-A[0])*t) + ',' + Math.round(A[1]+(B[1]-A[1])*t) + ',' + Math.round(A[2]+(B[2]-A[2])*t) + ')';
-  }
+  // ---------- chart maths (web/chartmath.js — pure, and unit-tested) -------
+  var M = ChartMath;
+  var LINE_POINTS = M.LINE_POINTS, BUCKETS = M.BUCKETS, WINDOWS = M.WINDOWS;
+  var windowBars = M.windowBars, resampleToN = M.resampleToN, padDomain = M.padDomain;
+  var withAlpha = M.withAlpha, lerpColor = M.lerpColor, bucketFor = M.bucketFor;
 
-  // heatmap scale (mirrors src/charts/heatmapColor.ts)
-  var BUCKETS = 17, NEUTRAL = 8;
-  function bucketFor(r) {
-    var safe = isFinite(r) ? Math.max(-1, Math.min(1, r)) : 0;
-    return Math.max(0, Math.min(BUCKETS - 1, Math.round(((safe + 1) / 2) * (BUCKETS - 1))));
-  }
+  /** Bucket colour against the live theme, which only the DOM can supply. */
   function bucketColor(b) {
-    b = Math.max(0, Math.min(BUCKETS - 1, b));
-    var dist = Math.abs(b - NEUTRAL) / NEUTRAL;
-    var pole = b >= NEUTRAL ? css('--corr-pos') : css('--corr-neg');
-    return lerpColor(css('--corr-neu'), pole, dist);
+    return M.bucketColor(b, css('--corr-neu'), css('--corr-pos'), css('--corr-neg'));
   }
 
   // ---------- navigation (history-integrated so edge-swipe back works) -----
