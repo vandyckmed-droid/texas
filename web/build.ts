@@ -59,7 +59,7 @@ const payload = JSON.stringify({ meta, rankings, correlation, charts }).replace(
 
 const css = readFileSync(join(here, 'app.css'), 'utf8');
 // chartmath first: app.js closes over the global it defines.
-const js = ['chartmath.js', 'app.js']
+const js = ['chartmath.js', 'concentration.js', 'app.js']
   .map((f) => readFileSync(join(here, f), 'utf8'))
   .join('\n');
 

@@ -147,6 +147,17 @@ button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
 .chip{padding:5px 8px; margin:4px; border-radius:7px; background:var(--fill);
   font-size:12px; font-weight:600}
 
+/* watchlist concentration */
+.conc{margin:2px 16px 14px; padding:12px 14px; background:var(--bg-elev); border-radius:10px}
+.conc-top{display:flex; align-items:baseline; gap:10px}
+.conc-n{font-size:30px; font-weight:700; letter-spacing:.2px; line-height:1}
+.conc-lbl{flex:1; min-width:0}
+.conc-lbl .t{font-size:14px; font-weight:600}
+.conc-lbl .m{font-size:12px; color:var(--text-2); margin-top:2px}
+.conc-bar{display:flex; gap:3px; margin-top:11px}
+.conc-bar i{height:6px; border-radius:3px; background:var(--text-2); min-width:6px}
+.conc-note{font-size:12px; color:var(--text-2); margin-top:8px; line-height:1.35}
+
 /* settings */
 .setcard{margin:0 16px; background:var(--bg-elev); border-radius:10px; overflow:hidden}
 .setrow{display:flex; align-items:center; width:100%; text-align:left; padding:16px}
