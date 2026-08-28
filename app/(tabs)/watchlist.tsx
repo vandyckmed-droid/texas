@@ -1,9 +1,3 @@
-import { Text, View } from 'react-native';
+import { WatchlistScreen } from '@/src/screens/WatchlistScreen';
 
-export default function WatchlistRoute() {
-  return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-      <Text>Watchlist</Text>
-    </View>
-  );
-}
+export default WatchlistScreen;
