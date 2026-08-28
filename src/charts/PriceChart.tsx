@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   FadeIn,
-  FadeOut,
+
   runOnJS,
   useAnimatedReaction,
   useSharedValue,
@@ -125,25 +125,13 @@ export function PriceChart({ chart, window: win, kind, width, height, onReadout 
             </View>
           ))}
         </Animated.View>
-        {kind === 'line' ? (
-          <Animated.View
-            key="line"
-            entering={FadeIn.duration(motion.fast)}
-            exiting={FadeOut.duration(motion.fast)}
-            style={StyleSheet.absoluteFill}
-          >
-            <LineChart {...chartProps} />
-          </Animated.View>
-        ) : (
-          <Animated.View
-            key="candle"
-            entering={FadeIn.duration(motion.fast)}
-            exiting={FadeOut.duration(motion.fast)}
-            style={StyleSheet.absoluteFill}
-          >
-            <CandleChart {...chartProps} />
-          </Animated.View>
-        )}
+        {/* Rendered without enter/exit layout animations: those keep a Skia
+            canvas mounted while it is being torn down, so the outgoing chart
+            can still be drawing as its native paths are released. Each chart
+            fades itself in instead. */}
+        <View style={StyleSheet.absoluteFill}>
+          {kind === 'line' ? <LineChart {...chartProps} /> : <CandleChart {...chartProps} />}
+        </View>
       </View>
     </GestureDetector>
   );
