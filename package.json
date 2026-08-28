@@ -10,7 +10,8 @@
     "test": "tsx --test quant/__tests__/*.test.ts src/charts/__tests__/*.test.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "lint": "expo lint",
-    "export": "expo export --platform ios"
+    "export": "expo export --platform ios",
+    "build:web": "tsx web/build.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
