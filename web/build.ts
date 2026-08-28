@@ -39,9 +39,19 @@ for (const key of ['rankBlended', 'rankVolAdj'] as const) {
     .forEach((s) => reachable.add(s.fileKey));
 }
 
-const charts: Record<string, ChartFile> = {};
+/**
+ * Close-only projection of the chart files. The web app draws a line and
+ * nothing else, so the open/high/low series would ship three quarters of the
+ * chart payload for arrays nothing reads — the 52-week range it might have
+ * served is precomputed into rankings.json. The refresh script still writes
+ * full OHLC; this is a build-time narrowing, not a change to the data format.
+ */
+type LineChartFile = Pick<ChartFile, 't' | 'c'>;
+
+const charts: Record<string, LineChartFile> = {};
 for (const key of [...reachable].sort()) {
-  charts[key] = read<ChartFile>(`data/charts/${key}.json`);
+  const { t, c } = read<ChartFile>(`data/charts/${key}.json`);
+  charts[key] = { t, c };
 }
 
 /** `</` inside a string literal would close the enclosing <script> early. */

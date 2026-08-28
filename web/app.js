@@ -1,6 +1,12 @@
-/* Momentum — web build. Mirrors the React Native app screen-for-screen:
-   same tokens, same data, same chart maths (windows, fixed-N resampling for
-   the line morph, right-anchored candles, diverging heatmap buckets). */
+/* Momentum — S&P 500 momentum ranker over a static snapshot.
+
+   The price chart is a line only. Candles were cut deliberately: every figure
+   the app reports (12–1, 6–1, blended, 126-day volatility, the ranks) comes
+   from adjusted closes, and the intraday range candles would add is already
+   on screen as the 52-week range. They also could not animate between windows
+   the way the line does — a window change alters the bar count, so there is
+   nothing to interpolate, and they jumped where the line morphs. Charts
+   therefore ship close-only, which is most of the payload saved. */
 (function () {
   'use strict';
   var D = window.DATA;
@@ -326,7 +332,7 @@
   }
 
   // ---------- Ticker ----------
-  var tickerState = { win: '6M', kind: 'line' };
+  var tickerState = { win: '6M' };
   function tickerScreen(params, anim) {
     var sym = params.symbol, list = params.list;
     var s = bySymbol[sym], chart = getChart(sym);
@@ -384,8 +390,8 @@
     body.appendChild(wrap);
 
     var controls = h('div', 'controls');
-    var winWrap = h('div', 'win'), kindWrap = h('div', 'kind');
-    controls.appendChild(winWrap); controls.appendChild(kindWrap);
+    var winWrap = h('div', 'win');
+    controls.appendChild(winWrap);
     body.appendChild(controls);
 
     var stats = h('div', 'stats');
@@ -417,14 +423,6 @@
       built[key] = { pts: resampleToN(slice, LINE_POINTS), lo: dom[0], hi: dom[1],
         up: slice[n - 1] >= slice[0], n: n, slice: slice };
     });
-    var candDom = {};
-    Object.keys(WINDOWS).forEach(function (key) {
-      var n = windowBars(key, chart.c.length);
-      var lows = chart.l.slice(chart.c.length - n), highs = chart.h.slice(chart.c.length - n);
-      var dom = padDomain(Math.min.apply(null, lows), Math.max.apply(null, highs));
-      candDom[key] = { lo: dom[0], hi: dom[1], n: n };
-    });
-
     var W = 0, plotW = 0, plotH = HEIGHT - 2 * PAD;
     var ctx = canvas.getContext('2d');
     function sizeCanvas() {
@@ -437,8 +435,7 @@
     sizeCanvas();
 
     var cur = { pts: built[tickerState.win].pts.slice(), lo: built[tickerState.win].lo, hi: built[tickerState.win].hi,
-      color: built[tickerState.win].up ? css('--pos') : css('--neg'),
-      cN: candDom[tickerState.win].n, cLo: candDom[tickerState.win].lo, cHi: candDom[tickerState.win].hi };
+      color: built[tickerState.win].up ? css('--pos') : css('--neg') };
     var animFrom = null, animStart = 0, animDur = 0, raf = 0;
     var active = -1; // crosshair index within window
 
@@ -460,75 +457,39 @@
       if (animFrom) {
         t = Math.min(1, (performance.now() - animStart) / animDur);
         var e = 1 - Math.pow(1 - t, 3); // cubic-out
-        if (tickerState.kind === 'line') {
-          for (var i = 0; i < LINE_POINTS; i++)
-            cur.pts[i] = animFrom.pts[i] + (animTo.pts[i] - animFrom.pts[i]) * e;
-          cur.lo = animFrom.lo + (animTo.lo - animFrom.lo) * e;
-          cur.hi = animFrom.hi + (animTo.hi - animFrom.hi) * e;
-          cur.color = lerpColor(animFrom.hex, animTo.hex, e);
-        } else {
-          cur.cN = animFrom.cN + (animTo.cN - animFrom.cN) * e;
-          cur.cLo = animFrom.cLo + (animTo.cLo - animFrom.cLo) * e;
-          cur.cHi = animFrom.cHi + (animTo.cHi - animFrom.cHi) * e;
-        }
+        for (var i = 0; i < LINE_POINTS; i++)
+          cur.pts[i] = animFrom.pts[i] + (animTo.pts[i] - animFrom.pts[i]) * e;
+        cur.lo = animFrom.lo + (animTo.lo - animFrom.lo) * e;
+        cur.hi = animFrom.hi + (animTo.hi - animFrom.hi) * e;
+        cur.color = lerpColor(animFrom.hex, animTo.hex, e);
         if (t >= 1) animFrom = null;
       }
       var wk = built[tickerState.win];
-      if (tickerState.kind === 'line') {
-        var vmin = Math.min.apply(null, wk.slice), vmax = Math.max.apply(null, wk.slice);
-        drawAxis(cur.lo, cur.hi, vmin, vmax);
-        ctx.beginPath();
-        for (var k = 0; k < LINE_POINTS; k++) {
-          var x = (k / (LINE_POINTS - 1)) * plotW, y = yFor(cur.pts[k], cur.lo, cur.hi);
-          if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        }
-        ctx.save();
-        ctx.lineTo(plotW, HEIGHT - PAD); ctx.lineTo(0, HEIGHT - PAD); ctx.closePath();
-        var grad = ctx.createLinearGradient(0, PAD, 0, HEIGHT);
-        grad.addColorStop(0, withAlpha(cur.color, 0.18));
-        grad.addColorStop(1, withAlpha(cur.color, 0));
-        ctx.fillStyle = grad; ctx.fill();
-        ctx.restore();
-        ctx.beginPath();
-        for (var k2 = 0; k2 < LINE_POINTS; k2++) {
-          var x2 = (k2 / (LINE_POINTS - 1)) * plotW, y2 = yFor(cur.pts[k2], cur.lo, cur.hi);
-          if (k2 === 0) ctx.moveTo(x2, y2); else ctx.lineTo(x2, y2);
-        }
-        ctx.strokeStyle = cur.color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-        ctx.stroke();
-        if (active >= 0) {
-          var n = wk.n, ci = Math.min(active, n - 1);
-          var cx = (ci / Math.max(1, n - 1)) * plotW, cy = yFor(wk.slice[ci], cur.lo, cur.hi);
-          crosshair(cx, cy, cur.color);
-        }
-      } else {
-        var cd = candDom[tickerState.win];
-        var lows = chart.l.slice(chart.c.length - cd.n), highs = chart.h.slice(chart.c.length - cd.n);
-        drawAxis(cur.cLo, cur.cHi, Math.min.apply(null, lows), Math.max.apply(null, highs));
-        var len = chart.c.length;
-        var count = Math.max(1, Math.round(cur.cN));
-        var slot = plotW / cur.cN, bw = Math.max(0.8, Math.min(slot * 0.72, slot - 0.6));
-        ctx.lineWidth = 1;
-        for (var b = 0; b < count; b++) {
-          var idx = len - count + b;
-          if (idx < 0) continue;
-          var bx = plotW - (count - b - 0.5) * slot;
-          if (bx < -slot) continue;
-          ctx.strokeStyle = css('--text-3');
-          ctx.beginPath();
-          ctx.moveTo(bx, yFor(chart.h[idx], cur.cLo, cur.cHi));
-          ctx.lineTo(bx, yFor(chart.l[idx], cur.cLo, cur.cHi));
-          ctx.stroke();
-          var yo = yFor(chart.o[idx], cur.cLo, cur.cHi), yc = yFor(chart.c[idx], cur.cLo, cur.cHi);
-          ctx.fillStyle = chart.c[idx] >= chart.o[idx] ? css('--pos') : css('--neg');
-          ctx.fillRect(bx - bw / 2, Math.min(yo, yc), bw, Math.max(1, Math.abs(yo - yc)));
-        }
-        if (active >= 0) {
-          var n2 = cd.n, ci2 = Math.min(active, n2 - 1);
-          var cx2 = plotW - (n2 - ci2 - 0.5) * (plotW / n2);
-          var cy2 = yFor(chart.c[len - n2 + ci2], cur.cLo, cur.cHi);
-          crosshair(cx2, cy2, css('--cross'));
-        }
+      var vmin = Math.min.apply(null, wk.slice), vmax = Math.max.apply(null, wk.slice);
+      drawAxis(cur.lo, cur.hi, vmin, vmax);
+      ctx.beginPath();
+      for (var k = 0; k < LINE_POINTS; k++) {
+        var x = (k / (LINE_POINTS - 1)) * plotW, y = yFor(cur.pts[k], cur.lo, cur.hi);
+        if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.save();
+      ctx.lineTo(plotW, HEIGHT - PAD); ctx.lineTo(0, HEIGHT - PAD); ctx.closePath();
+      var grad = ctx.createLinearGradient(0, PAD, 0, HEIGHT);
+      grad.addColorStop(0, withAlpha(cur.color, 0.18));
+      grad.addColorStop(1, withAlpha(cur.color, 0));
+      ctx.fillStyle = grad; ctx.fill();
+      ctx.restore();
+      ctx.beginPath();
+      for (var k2 = 0; k2 < LINE_POINTS; k2++) {
+        var x2 = (k2 / (LINE_POINTS - 1)) * plotW, y2 = yFor(cur.pts[k2], cur.lo, cur.hi);
+        if (k2 === 0) ctx.moveTo(x2, y2); else ctx.lineTo(x2, y2);
+      }
+      ctx.strokeStyle = cur.color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.stroke();
+      if (active >= 0) {
+        var n = wk.n, ci = Math.min(active, n - 1);
+        var cx = (ci / Math.max(1, n - 1)) * plotW, cy = yFor(wk.slice[ci], cur.lo, cur.hi);
+        crosshair(cx, cy, cur.color);
       }
       if (animFrom) raf = requestAnimationFrame(draw);
     }
@@ -551,10 +512,6 @@
       if (idx === null) {
         roEl.textContent = sign + money(Math.abs(delta)) + ' (' + pct(dp) + ') · ' + tickerState.win;
         roEl.className = 'readout num ' + (delta >= 0 ? 'pos' : 'neg');
-      } else if (tickerState.kind === 'candle') {
-        var gi = off + idx;
-        roEl.textContent = dayLong(chart.t[gi]) + ' · O ' + money(chart.o[gi]) + '  H ' + money(chart.h[gi]) + '  L ' + money(chart.l[gi]);
-        roEl.className = 'readout num';
       } else {
         roEl.textContent = dayLong(chart.t[off + idx]) + ' · ' + sign + money(Math.abs(delta)) + ' (' + pct(dp) + ')';
         roEl.className = 'readout num ' + (delta >= 0 ? 'pos' : 'neg');
@@ -563,17 +520,15 @@
 
     var animTo = null;
     function switchWin(w) {
-      var fromLine = { pts: cur.pts.slice(), lo: cur.lo, hi: cur.hi,
-        hex: rgbToHex(cur.color), cN: cur.cN, cLo: cur.cLo, cHi: cur.cHi };
+      var fromLine = { pts: cur.pts.slice(), lo: cur.lo, hi: cur.hi, hex: rgbToHex(cur.color) };
       tickerState.win = w;
       active = -1;
       animTo = { pts: built[w].pts, lo: built[w].lo, hi: built[w].hi,
-        hex: built[w].up ? css('--pos') : css('--neg'),
-        cN: candDom[w].n, cLo: candDom[w].lo, cHi: candDom[w].hi };
+        hex: built[w].up ? css('--pos') : css('--neg') };
       fromLine.hex = fromLine.hex || animTo.hex;
       animFrom = fromLine;
       animStart = performance.now();
-      animDur = tickerState.kind === 'line' ? 350 : 250;
+      animDur = 350;
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(draw);
       renderControls();
@@ -585,24 +540,11 @@
       if (!m) return null;
       return '#' + m.slice(0, 3).map(function (v) { return (+v).toString(16).padStart(2, '0'); }).join('');
     }
-    function switchKind(k) {
-      tickerState.kind = k;
-      active = -1;
-      animFrom = null;
-      cur.pts = built[tickerState.win].pts.slice();
-      cur.lo = built[tickerState.win].lo; cur.hi = built[tickerState.win].hi;
-      cur.color = built[tickerState.win].up ? css('--pos') : css('--neg');
-      cur.cN = candDom[tickerState.win].n; cur.cLo = candDom[tickerState.win].lo; cur.cHi = candDom[tickerState.win].hi;
-      draw(); renderControls(); setReadout();
-    }
     function renderControls() {
-      winWrap.textContent = ''; kindWrap.textContent = '';
+      winWrap.textContent = '';
       winWrap.appendChild(segmented(
         [{value:'1M',label:'1M'},{value:'3M',label:'3M'},{value:'6M',label:'6M'},{value:'12M',label:'12M'}],
         tickerState.win, true, switchWin));
-      kindWrap.appendChild(segmented(
-        [{value:'line',label:'Line'},{value:'candle',label:'Candles'}],
-        tickerState.kind, true, switchKind));
     }
 
     // crosshair pointer handling (canvas has touch-action:none)
@@ -610,11 +552,8 @@
     function pointIndex(e) {
       var rect = canvas.getBoundingClientRect();
       var x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-      var n = tickerState.kind === 'line' ? built[tickerState.win].n : candDom[tickerState.win].n;
-      var i = tickerState.kind === 'line'
-        ? Math.round((x / plotW) * (n - 1))
-        : Math.round((x / plotW) * n - 0.5);
-      return Math.max(0, Math.min(n - 1, i));
+      var n = built[tickerState.win].n;
+      return Math.max(0, Math.min(n - 1, Math.round((x / plotW) * (n - 1))));
     }
     function onDown(e) { active = pointIndex(e); if (active !== lastIdx) { haptic(); lastIdx = active; } draw(); setReadout(); }
     function onMove(e) { if (active < 0) return; var i = pointIndex(e); if (i !== active) { active = i; haptic(); draw(); setReadout(); } }
