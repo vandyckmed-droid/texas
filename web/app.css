@@ -40,12 +40,10 @@ body{
 .num{font-variant-numeric:tabular-nums}
 button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
 
-/* header */
-.hdr{display:flex; align-items:flex-end; padding:8px 16px 12px}
-.hdr .titles{flex:1}
-.h1{font-size:31px; font-weight:700; letter-spacing:.2px}
-.sub{font-size:12px; color:var(--text-2); margin-top:3px}
-.iconbtn{padding:6px 0 6px 12px; color:var(--text-2); font-size:20px; line-height:1}
+/* header — one compact line. The tab bar names the screen, so no title. */
+.hdr{display:flex; align-items:center; padding:6px 16px 10px; min-height:28px}
+.sub{flex:1; font-size:12px; color:var(--text-2)}
+.iconbtn{padding:4px 0 4px 12px; color:var(--text-2); font-size:20px; line-height:1}
 
 /* segmented */
 .seg{display:flex; height:34px; border-radius:9px; background:var(--fill); padding:2px; position:relative}
@@ -89,8 +87,8 @@ button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
 .tabbar button.on{color:var(--text)}
 .tabbar .ticon{font-size:19px; line-height:1}
 
-/* ticker */
-.thdr{display:flex; align-items:center; padding:4px 8px}
+/* ticker (and the correlation header, which shares this row) */
+.thdr{display:flex; align-items:center; padding:2px 8px}
 .backbtn{padding:8px; font-size:22px; line-height:1}
 .thdr .tt{flex:1; min-width:0}
 .tsym{font-size:20px; font-weight:600}
@@ -164,6 +162,7 @@ button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
 .inforow .v{color:var(--text-2)}
 .foot{font-size:12px; color:var(--text-3); margin:8px 20px 24px; line-height:1.35}
 .setpad{padding:8px}
+.screen > .sect:first-child{margin-top:12px}
 
 /* empty state */
 .empty{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px; text-align:center}

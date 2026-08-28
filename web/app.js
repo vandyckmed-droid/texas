@@ -199,11 +199,10 @@
   // ---------- Ranks ----------
   function ranksScreen() {
     var sc = h('div', 'screen');
+    // No big title on a tabbed screen: the tab bar already names it, and a
+    // 31px heading repeating the label cost a row of stocks.
     var hdr = h('div', 'hdr');
-    var titles = h('div', 'titles');
-    titles.appendChild(h('div', 'h1', 'Ranks'));
-    titles.appendChild(h('div', 'sub', 'Top 50 of ' + D.meta.rankedCount + ' · as of ' + longDate(D.meta.asOf)));
-    hdr.appendChild(titles);
+    hdr.appendChild(h('div', 'sub', 'Top 50 of ' + D.meta.rankedCount + ' · ' + longDate(D.meta.asOf)));
     var grid = h('button', 'iconbtn', '▦');
     grid.setAttribute('aria-label', 'Correlation and groups');
     grid.onclick = function () { push({ screen: 'correlation', params: {} }); };
@@ -225,13 +224,12 @@
   // ---------- Watchlist ----------
   function watchlistScreen() {
     var sc = h('div', 'screen');
-    var hdr = h('div', 'hdr');
-    var titles = h('div', 'titles');
-    titles.appendChild(h('div', 'h1', 'Watchlist'));
     var present = orderedSymbols('watchlist');
-    if (present.length) titles.appendChild(h('div', 'sub', present.length + (present.length === 1 ? ' stock' : ' stocks')));
-    hdr.appendChild(titles);
-    sc.appendChild(hdr);
+    if (present.length) {
+      var hdr = h('div', 'hdr');
+      hdr.appendChild(h('div', 'sub', present.length + (present.length === 1 ? ' stock' : ' stocks')));
+      sc.appendChild(hdr);
+    }
     if (!present.length) {
       sc.appendChild(emptyState('☆', 'Nothing watched yet', 'Tap the star on any stock in Ranks to add it here.'));
       return sc;
@@ -248,10 +246,6 @@
   // ---------- Settings ----------
   function settingsScreen() {
     var sc = h('div', 'screen');
-    var hdr = h('div', 'hdr');
-    hdr.appendChild(h('div', 'titles')).appendChild(h('div', 'h1', 'Settings'));
-    sc.appendChild(hdr);
-
     sc.appendChild(h('div', 'sect', 'ROW VISUALIZATION'));
     var vizCard = h('div', 'setcard');
     [['range', '52-week range', 'Low, high, and latest price'],
@@ -547,17 +541,17 @@
     bb.setAttribute('aria-label', 'Back');
     bb.onclick = back;
     thdr.appendChild(bb);
-    sc.appendChild(thdr);
     if (!set || set.tickers.length < 2) {
+      sc.appendChild(thdr);
       sc.appendChild(emptyState('▦', 'No correlation data'));
       return sc;
     }
-    var hdr = h('div', 'hdr');
-    var titles = h('div', 'titles');
-    titles.appendChild(h('div', 'h1', 'Correlation'));
-    titles.appendChild(h('div', 'sub', 'Top ' + set.tickers.length + ' · 126-day window · as of ' + longDate(D.correlation.asOf)));
-    hdr.appendChild(titles);
-    sc.appendChild(hdr);
+    // Title rides on the back row rather than claiming a block below it.
+    var tt = h('div', 'tt');
+    tt.appendChild(h('div', 'tsym', 'Correlation'));
+    tt.appendChild(h('div', 'tname', 'Top ' + set.tickers.length + ' · 126-day window · ' + longDate(D.correlation.asOf)));
+    thdr.appendChild(tt);
+    sc.appendChild(thdr);
     var sw = h('div', 'segwrap');
     sw.appendChild(segmented(
       [{ value: 'blended', label: 'Momentum' }, { value: 'volAdj', label: 'Vol-adjusted' }],
