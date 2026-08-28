@@ -43,6 +43,10 @@ button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
 /* header — one compact line. The tab bar names the screen, so no title. */
 .hdr{display:flex; align-items:center; padding:6px 16px 10px; min-height:28px}
 .sub{flex:1; font-size:12px; color:var(--text-2)}
+.stale{color:var(--neg); font-weight:600}
+.stale.severe{color:var(--neg); font-weight:700}
+.more{width:100%; padding:16px; font-size:14px; font-weight:600; color:var(--accent)}
+.more:active{background:var(--fill)}
 .iconbtn{padding:4px 0 4px 12px; color:var(--text-2); font-size:20px; line-height:1}
 
 /* segmented */
@@ -57,8 +61,10 @@ button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
 /* rows */
 .row{height:64px; display:flex; align-items:center; padding:0 8px 0 16px; position:relative; width:100%; text-align:left}
 .row:active{background:var(--fill)}
-.row .hair{position:absolute; left:42px; right:0; bottom:0; height:.5px; background:var(--sep)}
-.rank{width:26px; font-size:12.5px; color:var(--text-3)}
+.row .hair{position:absolute; left:46px; right:0; bottom:0; height:.5px; background:var(--sep)}
+.rank{width:30px; font-size:12.5px; color:var(--text-3); display:flex; flex-direction:column; align-items:flex-start}
+.move{font-size:9.5px; font-weight:600; margin-top:2px; letter-spacing:-.2px}
+.move.new{color:var(--accent)}
 .namecol{flex:1; min-width:0; padding-right:8px; display:flex; flex-direction:column; justify-content:center}
 .sym,.nm{display:block}
 .sym{font-size:16px; font-weight:600}

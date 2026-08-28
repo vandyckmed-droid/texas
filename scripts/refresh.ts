@@ -29,7 +29,7 @@ import { adjustSeries, type AdjustedSeries } from './adjust.ts';
 import { fetchConstituents, fetchHistory, mapLimit, type FmpSource } from './fmp.ts';
 import { cleanName } from './names.ts';
 import { normalizeSectors } from './sectors.ts';
-import { round, writeSnapshot, type Snapshot } from './write.ts';
+import { readPreviousRanks, round, writeSnapshot, type Snapshot } from './write.ts';
 
 const HISTORY_MONTHS = 25; // ≈ 525 trading days; ranking needs 273
 const MIN_BARS_RANKED = 273;
@@ -205,6 +205,15 @@ async function main(): Promise<void> {
   const rankB = new Map(byBlended.map((r, i) => [r.cand.symbol, i + 1]));
   const rankV = new Map(byVolAdj.map((r, i) => [r.cand.symbol, i + 1]));
 
+  /**
+   * Ranks from the snapshot about to be replaced. A refresh overwrites data/
+   * in place, so without carrying these forward there is no record of what
+   * moved -- and "what changed since last time" is the question a ranking is
+   * opened to answer. Missing or unreadable previous data is not an error;
+   * the fields simply stay absent and the app shows no movement.
+   */
+  const previous = readPreviousRanks();
+
   const stocks: StockRow[] = byBlended.map((r) => ({
     symbol: r.cand.symbol,
     fileKey: r.cand.fileKey,
@@ -218,6 +227,7 @@ async function main(): Promise<void> {
     volAdj: round(r.volAdj, 4),
     rankBlended: rankB.get(r.cand.symbol)!,
     rankVolAdj: rankV.get(r.cand.symbol)!,
+    ...previous.get(r.cand.symbol),
     wk52Low: round(r.range.low, 2),
     wk52High: round(r.range.high, 2),
     rolling: r.rolling,

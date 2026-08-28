@@ -24,6 +24,7 @@
     rowViz: loadLS('texas.web.rowViz', 'range'),
     appearance: loadLS('texas.web.appearance', 'system'),
     watch: loadLS('texas.web.watch', []),
+    showAll: loadLS('texas.web.showAll', false),
     stack: [], // pushed routes: {screen:'ticker'|'correlation', params}
   };
 
@@ -48,6 +49,26 @@
   var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   function longDate(iso) { var p = iso.split('-'); return MONTHS[+p[1]-1] + ' ' + (+p[2]) + ', ' + p[0]; }
   function dayLong(t) { var m = Math.floor(t/100)%100, d = t%100; return MONTHS[m-1]+' '+d+', '+Math.floor(t/10000); }
+  /**
+   * Calendar days since the snapshot's asOf date. Momentum ranks computed from
+   * three-week-old closes are actively misleading, and until now nothing on
+   * screen said how old they were.
+   */
+  var STALE_DAYS = 8;   // roughly a trading week plus a weekend
+  var VERY_STALE_DAYS = 22;
+  function snapshotAgeDays() {
+    var p = D.meta.asOf.split('-');
+    var asOf = Date.UTC(+p[0], +p[1] - 1, +p[2]);
+    var now = new Date();
+    var today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.max(0, Math.round((today - asOf) / 86400000));
+  }
+  function ageNote() {
+    var d = snapshotAgeDays();
+    if (d < STALE_DAYS) return null;
+    return { days: d, severe: d >= VERY_STALE_DAYS };
+  }
+
   function haptic() { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) {} }
 
   // ---------- data accessors (mirrors src/data/store.ts) ----------
@@ -109,7 +130,14 @@
       return S.watch.filter(function (s) { return bySymbol[s]; })
         .sort(function (a, b) { return rankOf(bySymbol[a], S.mode) - rankOf(bySymbol[b], S.mode); });
     }
-    if (list.indexOf('ranks:') === 0) return top50(list.slice(6)).map(function (s) { return s.symbol; });
+    if (list.indexOf('ranks:') === 0) {
+      var parts = list.slice(6).split(':');
+      var ordered = D.rankings.stocks.slice().sort(function (a, b) {
+        return rankOf(a, parts[0]) - rankOf(b, parts[0]);
+      });
+      if (parts[1] !== 'all') ordered = ordered.slice(0, 50);
+      return ordered.map(function (st) { return st.symbol; });
+    }
     if (list.indexOf('solo:') === 0) {
       var sset = corrSet(list.slice(5));
       if (!sset) return [];
@@ -233,9 +261,30 @@
     });
     return w;
   }
+  /**
+   * Rank movement since the previous refresh, as a caret under the rank.
+   * Absent until a refresh has run with a prior snapshot on disk, so the
+   * column simply stays empty rather than claiming everything is unchanged.
+   */
+  function rankMove(st) {
+    var prev = S.mode === 'blended' ? st.prevRankBlended : st.prevRankVolAdj;
+    var now = rankOf(st, S.mode);
+    if (prev === undefined || prev === null) {
+      // No prior entry at all: the name is new to the ranked universe.
+      return D.rankings.hasPrevious ? h('span', 'move new', 'new') : null;
+    }
+    var d = prev - now; // positive means it climbed
+    if (d === 0) return null;
+    return h('span', 'move ' + (d > 0 ? 'pos' : 'neg'), (d > 0 ? '▲' : '▼') + Math.abs(d));
+  }
+
   function stockRow(s, rank, list, onStar) {
     var row = h('button', 'row');
-    row.appendChild(h('span', 'rank num', String(rank)));
+    var rk = h('span', 'rank num');
+    rk.appendChild(h('span', 'n', String(rank)));
+    var mv = rankMove(s);
+    if (mv) rk.appendChild(mv);
+    row.appendChild(rk);
     var nc = h('div', 'namecol');
     nc.appendChild(h('div', 'sym', s.symbol));
     nc.appendChild(h('div', 'nm', s.name));
@@ -282,7 +331,16 @@
     // No big title on a tabbed screen: the tab bar already names it, and a
     // 31px heading repeating the label cost a row of stocks.
     var hdr = h('div', 'hdr');
-    hdr.appendChild(h('div', 'sub', 'Top 50 of ' + D.meta.rankedCount + ' · ' + longDate(D.meta.asOf)));
+    var age = ageNote();
+    var sub = h('div', 'sub', (S.showAll ? 'All ' + D.meta.rankedCount : 'Top 50 of ' + D.meta.rankedCount) +
+      ' · ' + longDate(D.meta.asOf));
+    if (age) {
+      var warn = h('span', 'stale' + (age.severe ? ' severe' : ''),
+        ' · ' + age.days + ' days old');
+      warn.title = 'Ask Claude Code to refresh the snapshot';
+      sub.appendChild(warn);
+    }
+    hdr.appendChild(sub);
     var find = h('button', 'iconbtn', '⌕');
     find.setAttribute('aria-label', 'Search all stocks');
     find.onclick = function () { push({ screen: 'search', params: {} }); };
@@ -299,57 +357,108 @@
       function (v) { S.mode = v; saveLS('texas.web.mode', v); render(); }
     ));
     sc.appendChild(sw);
+    var ranked = D.rankings.stocks.slice().sort(function (a, b) {
+      return rankOf(a, S.mode) - rankOf(b, S.mode);
+    });
+    var shown = S.showAll ? ranked : ranked.slice(0, 50);
     var list = h('div');
-    top50(S.mode).forEach(function (s) { list.appendChild(stockRow(s, rankOf(s, S.mode), 'ranks:' + S.mode)); });
+    shown.forEach(function (st) {
+      list.appendChild(stockRow(st, rankOf(st, S.mode), 'ranks:' + S.mode + (S.showAll ? ':all' : '')));
+    });
     sc.appendChild(list);
+
+    // The 50-row cut-off was a payload constraint before every name shipped.
+    // Now it is only a default, so it is worth being able to pass.
+    if (ranked.length > 50) {
+      var more = h('button', 'more', S.showAll
+        ? 'Show top 50 only'
+        : 'Show all ' + ranked.length);
+      more.onclick = function () {
+        haptic();
+        S.showAll = !S.showAll;
+        saveLS('texas.web.showAll', S.showAll);
+        render();
+      };
+      sc.appendChild(more);
+    }
     return sc;
   }
 
   // ---------- Watchlist ----------
-  /**
-   * The watchlist expressed against the current mode's correlation matrix,
-   * or null when fewer than one member is covered by it. Members carry the
-   * matrix index plus the return and volatility the portfolio maths needs.
-   */
-  function heldBook() {
-    var set = corrSet(S.mode);
-    if (!set) return null;
-    var pos = {};
-    for (var i = 0; i < set.tickers.length; i++) pos[set.tickers[i]] = i;
+  /* --- watchlist maths, over correlations computed here ------------------
+     The shipped matrix covers only each mode's top 50, so once search could
+     reach all 500 names, starring one from outside that set silently dropped
+     it from every calculation below. Correlations are now computed from the
+     close series already in the payload, which covers any pair.
+
+     Two caches, because the ranks screen asks for one candidate against the
+     whole watchlist on every row: return maps per symbol, and correlations
+     per pair. */
+  var retCache = {};
+  var pairCache = {};
+
+  function returnsOf(sym) {
+    if (!(sym in retCache)) {
+      var ch = getChart(sym);
+      retCache[sym] = ch ? Concentration.returnsByDate(ch) : null;
+    }
+    return retCache[sym];
+  }
+
+  function corrBetween(a, b) {
+    if (a === b) return 1;
+    var key = a < b ? a + '|' + b : b + '|' + a;
+    if (key in pairCache) return pairCache[key];
+    var ra = returnsOf(a), rb = returnsOf(b);
+    var r = ra && rb ? Concentration.correlationFromReturns(ra, rb) : NaN;
+    // An unmeasurable pair reads as uncorrelated, matching the refresh script
+    // rather than poisoning every sum it appears in.
+    pairCache[key] = isFinite(r) ? r : 0;
+    return pairCache[key];
+  }
+
+  /** Members and their correlation matrix, for any set of symbols. */
+  function bookOf(symbols) {
     var members = [];
-    S.watch.forEach(function (sym) {
+    symbols.forEach(function (sym) {
       var st = bySymbol[sym];
-      if (!st || pos[sym] === undefined) return;
-      members.push({ i: pos[sym], ret: st.blended, vol: st.vol, symbol: sym });
+      if (st && getChart(sym)) members.push({ symbol: sym, ret: st.blended, vol: st.vol, i: 0 });
     });
-    return members.length ? { set: set, pos: pos, members: members } : null;
+    members.forEach(function (m, i) { m.i = i; });
+    var n = members.length;
+    var matrix = [];
+    for (var i = 0; i < n; i++) { matrix.push(new Array(n).fill(0)); matrix[i][i] = 1; }
+    for (var a = 0; a < n; a++) {
+      for (var b = a + 1; b < n; b++) {
+        var r = corrBetween(members[a].symbol, members[b].symbol);
+        matrix[a][b] = r;
+        matrix[b][a] = r;
+      }
+    }
+    return { members: members, matrix: matrix };
   }
 
   /**
    * What this name is worth to the watchlist, in points of its score.
    *
    * One polarity for both cases, which matters more than it looks: for a name
-   * you hold this is what you would LOSE by dropping it, and for one you do
-   * not it is what you would GAIN by adding it. Reporting the removal delta
-   * raw would make a green "+" mean "drop me" on one screen and "star me" on
-   * the other. Positive always means the name earns its place.
+   * held this is what would be LOST by dropping it, and for one not held it is
+   * what would be GAINED by adding it. Both are the same question asked of a
+   * book that contains the name -- what does removing it do -- so both take
+   * the same code path, negated once.
    *
-   * Null where the answer is undefined -- an empty book, a symbol outside this
-   * mode's top 50, or the last holding, which cannot be reduced further.
+   * Null where the answer is undefined: a book of fewer than two names, or a
+   * symbol with no chart to correlate.
    */
   function worthOf(sym) {
-    var book = heldBook();
-    if (!book || book.pos[sym] === undefined) return null;
+    var syms = S.watch.indexOf(sym) >= 0 ? S.watch : S.watch.concat([sym]);
+    var book = bookOf(syms);
+    if (book.members.length < 2) return null;
     var idx = -1;
     for (var k = 0; k < book.members.length; k++) if (book.members[k].symbol === sym) { idx = k; break; }
-    if (idx >= 0) {
-      var drop = Concentration.deltaOnRemove(book.set.matrix, book.members, idx);
-      return drop === null ? null : -drop;
-    }
-    var st = bySymbol[sym];
-    if (!st) return null;
-    return Concentration.deltaOnAdd(book.set.matrix, book.members,
-      { i: book.pos[sym], ret: st.blended, vol: st.vol });
+    if (idx < 0) return null;
+    var drop = Concentration.deltaOnRemove(book.matrix, book.members, idx);
+    return drop === null ? null : -drop;
   }
 
   function deltaChip(sym) {
@@ -379,14 +488,12 @@
    * correlation groups, and the note names the largest overlap.
    */
   function concentrationBlock(symbols) {
-    var set = corrSet(S.mode);
-    if (!set) return null;
-    var split = Concentration.groupsOf(set, symbols);
-    if (split.covered.length < 2) return null;
+    var book = bookOf(symbols);
+    if (book.members.length < 2) return null;
 
-    var idx = split.covered.map(function (sym) { return split.index[sym]; });
-    var rho = Concentration.avgPairwiseCorr(set.matrix, idx);
-    var bets = Concentration.effectiveBets(split.covered.length, rho);
+    var idx = book.members.map(function (m) { return m.i; });
+    var rho = Concentration.avgPairwiseCorr(book.matrix, idx);
+    var bets = Concentration.effectiveBets(book.members.length, rho);
 
     var box = h('div', 'conc');
     var top = h('div', 'conc-top');
@@ -395,45 +502,52 @@
     var lbl = h('div', 'conc-lbl');
     // Singular only when the number actually displayed is 1.0.
     lbl.appendChild(h('div', 't', shown === '1.0' ? 'independent bet' : 'independent bets'));
-    var meta = split.covered.length + ' names · avg ρ ' + ratio(rho);
-    if (split.uncovered.length) meta += ' · ' + split.uncovered.length + ' not ranked in this mode';
-    lbl.appendChild(h('div', 'm num', meta));
+    lbl.appendChild(h('div', 'm num', book.members.length + ' names · avg ρ ' + ratio(rho)));
     top.appendChild(lbl);
     box.appendChild(top);
 
-    // One segment per group, width proportional to how many names sit in it.
-    // Deliberately one neutral tone at descending strength rather than the
-    // gain/loss or correlation hues: a wide leading segment is the signal, and
-    // green here would read as 'good' when it means the opposite.
-    var bar = h('div', 'conc-bar');
-    split.groups.forEach(function (g, i) {
-      var seg = h('i');
-      seg.style.flex = String(g.symbols.length);
-      seg.style.opacity = String(Math.max(0.22, 1 - i * 0.26));
-      seg.title = g.symbols.join(', ');
-      bar.appendChild(seg);
-    });
-    box.appendChild(bar);
+    // The group split still comes from the precomputed clustering, which only
+    // covers this mode's top 50. The headline above no longer depends on it,
+    // so a watchlist reaching outside the ranking still gets its score -- it
+    // just cannot be broken into groups that were never computed for it.
+    var set = corrSet(S.mode);
+    var split = set ? Concentration.groupsOf(set, symbols) : null;
+    if (split && split.groups.length) {
+      // One segment per group, width proportional to how many names sit in it.
+      // Deliberately one neutral tone at descending strength rather than the
+      // gain/loss or correlation hues: a wide leading segment is the signal,
+      // and green here would read as 'good' when it means the opposite.
+      var bar = h('div', 'conc-bar');
+      split.groups.forEach(function (g, i) {
+        var seg = h('i');
+        seg.style.flex = String(g.symbols.length);
+        seg.style.opacity = String(Math.max(0.22, 1 - i * 0.26));
+        seg.title = g.symbols.join(', ');
+        bar.appendChild(seg);
+      });
+      box.appendChild(bar);
 
-    var big = split.groups[0];
-    box.appendChild(h('div', 'conc-note', big.symbols.length < 2
-      ? 'No two of these move as a group — ' + split.groups.length + ' separate bets.'
-      : big.symbols.length + ' of them move as one: ' + big.symbols.join(' · ')));
+      var big = split.groups[0];
+      var note = big.symbols.length < 2
+        ? 'No two of these move as a group — ' + split.groups.length + ' separate bets.'
+        : big.symbols.length + ' of them move as one: ' + big.symbols.join(' · ');
+      if (split.uncovered.length) {
+        note += ' (' + split.uncovered.length + ' outside this mode’s top 50, not grouped)';
+      }
+      box.appendChild(h('div', 'conc-note', note));
+    }
 
     // Which one to drop, rather than leaving the reader to try each in turn.
-    var book = heldBook();
-    if (book && book.members.length > 1) {
-      var best = null;
-      book.members.forEach(function (m, k) {
-        var d = Concentration.deltaOnRemove(set.matrix, book.members, k);
-        if (d !== null && (best === null || d > best.d)) best = { sym: m.symbol, d: d };
-      });
-      if (best && best.d > 0.005) {
-        box.appendChild(h('div', 'conc-drop',
-          'Dropping ' + best.sym + ' would help most: +' + best.d.toFixed(2)));
-      } else if (best) {
-        box.appendChild(h('div', 'conc-drop', 'Every name is currently earning its place.'));
-      }
+    var best = null;
+    book.members.forEach(function (m, k) {
+      var d = Concentration.deltaOnRemove(book.matrix, book.members, k);
+      if (d !== null && (best === null || d > best.d)) best = { sym: m.symbol, d: d };
+    });
+    if (best && best.d > 0.005) {
+      box.appendChild(h('div', 'conc-drop',
+        'Dropping ' + best.sym + ' would help most: +' + best.d.toFixed(2)));
+    } else if (best) {
+      box.appendChild(h('div', 'conc-drop', 'Every name is currently earning its place.'));
     }
     return box;
   }

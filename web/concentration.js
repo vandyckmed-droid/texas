@@ -3,6 +3,81 @@
 var Concentration = (function () {
   'use strict';
 
+  /* --- correlation from raw closes ------------------------------------- *
+     The shipped matrix covers only each mode's top 50, but search reaches the
+     whole ranked universe, so a name starred from outside that set had no
+     correlation and silently dropped out of the watchlist maths. Every close
+     series is already in the payload, so the pair can simply be correlated on
+     demand. This mirrors scripts/refresh.ts exactly -- daily log returns keyed
+     by the later date, intersected on common dates, last CORR_WINDOW of them,
+     and NaN below MIN_OVERLAP -- and a test checks it reproduces the
+     precomputed matrix on real data. */
+  var CORR_WINDOW = 126;
+  var MIN_OVERLAP = 100;
+
+  /** Daily log returns keyed by the date they land on. */
+  function returnsByDate(chart) {
+    var m = {};
+    for (var i = 1; i < chart.c.length; i++) {
+      m[chart.t[i]] = Math.log(chart.c[i] / chart.c[i - 1]);
+    }
+    return m;
+  }
+
+  function pearson(x, y) {
+    var n = x.length;
+    if (n !== y.length || n < 2) return NaN;
+    var mx = 0, my = 0, i;
+    for (i = 0; i < n; i++) { mx += x[i]; my += y[i]; }
+    mx /= n; my /= n;
+    var sxy = 0, sxx = 0, syy = 0;
+    for (i = 0; i < n; i++) {
+      var dx = x[i] - mx, dy = y[i] - my;
+      sxy += dx * dy; sxx += dx * dx; syy += dy * dy;
+    }
+    if (sxx === 0 || syy === 0) return NaN;
+    return sxy / Math.sqrt(sxx * syy);
+  }
+
+  /** Correlation of two already-computed return maps over the recent window. */
+  function correlationFromReturns(a, b) {
+    var common = [];
+    for (var d in a) if (Object.prototype.hasOwnProperty.call(b, d)) common.push(+d);
+    common.sort(function (p, q) { return p - q; });
+    var recent = common.slice(-CORR_WINDOW);
+    if (recent.length < MIN_OVERLAP) return NaN;
+    return pearson(
+      recent.map(function (d) { return a[d]; }),
+      recent.map(function (d) { return b[d]; })
+    );
+  }
+
+  /** Correlation of two charts. Returns are recomputed each call; callers that
+   *  correlate one symbol against many should cache returnsByDate themselves. */
+  function correlationOf(chartA, chartB) {
+    return correlationFromReturns(returnsByDate(chartA), returnsByDate(chartB));
+  }
+
+  /**
+   * Symmetric matrix over `charts`, unit diagonal, NaN pairs read as 0 -- the
+   * same substitution the refresh script makes, so an unmeasurable pair is
+   * treated as uncorrelated rather than poisoning every sum it appears in.
+   */
+  function correlationMatrixOf(charts) {
+    var n = charts.length;
+    var m = [];
+    for (var i = 0; i < n; i++) { m.push(new Array(n).fill(0)); m[i][i] = 1; }
+    for (var a = 0; a < n; a++) {
+      for (var b = a + 1; b < n; b++) {
+        var r = correlationOf(charts[a], charts[b]);
+        if (!isFinite(r)) r = 0;
+        m[a][b] = r;
+        m[b][a] = r;
+      }
+    }
+    return m;
+  }
+
   /** Mean of the off-diagonal correlations among `idx` (positions in the matrix). */
   function avgPairwiseCorr(matrix, idx) {
     var n = idx.length;
@@ -130,6 +205,13 @@ var Concentration = (function () {
   }
 
   return {
+    CORR_WINDOW: CORR_WINDOW,
+    MIN_OVERLAP: MIN_OVERLAP,
+    pearson: pearson,
+    returnsByDate: returnsByDate,
+    correlationOf: correlationOf,
+    correlationFromReturns: correlationFromReturns,
+    correlationMatrixOf: correlationMatrixOf,
     avgPairwiseCorr: avgPairwiseCorr,
     effectiveBets: effectiveBets,
     groupsOf: groupsOf,
