@@ -148,9 +148,8 @@ export function CorrelationScreen() {
             return (
               <View key={cluster.id} style={[s.card, isFocused && s.cardFocused]}>
                 <Pressable style={s.cardHead} onPress={() => toggleFocus(cluster)}>
-                  <PriceText style={s.cardIndex}>{index + 1}</PriceText>
                   <View style={{ flex: 1 }}>
-                    <Text style={s.cardTitle}>{compositionLabel(members)}</Text>
+                    <Text style={s.cardTitle}>Group {index + 1}</Text>
                     <PriceText style={s.cardMeta}>
                       {cluster.size} stocks · avg ρ {formatRatio(cluster.avgIntraCorr)}
                     </PriceText>
@@ -215,19 +214,6 @@ export function CorrelationScreen() {
   );
 }
 
-/** Honest cluster label: the sector only when pure, hedged otherwise. */
-function compositionLabel(members: string[]): string {
-  const counts = new Map<string, number>();
-  for (const symbol of members) {
-    const sector = getStock(symbol)?.sector ?? 'Unknown';
-    counts.set(sector, (counts.get(sector) ?? 0) + 1);
-  }
-  const [topSector, topCount] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
-  if (topCount === members.length) return topSector;
-  if (topCount >= (members.length * 2) / 3) return `Mostly ${topSector}`;
-  return 'Mixed sectors';
-}
-
 function Back({ onPress }: { onPress: () => void }) {
   const theme = useTheme();
   return (
@@ -278,13 +264,6 @@ const styles = (theme: Theme) =>
       marginTop: -4,
       marginBottom: space.s8,
       lineHeight: 16,
-    },
-    cardIndex: {
-      ...typo.rowMeta,
-      color: theme.colors.textTertiary,
-      width: 20,
-      alignSelf: 'flex-start',
-      marginTop: 3,
     },
     sectionTitle: {
       ...typo.micro,
