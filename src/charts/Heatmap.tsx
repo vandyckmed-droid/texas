@@ -1,5 +1,5 @@
 import { Canvas, Group, Path, Rect, Skia } from '@shopify/react-native-skia';
-import React, { useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -37,7 +37,7 @@ interface Props {
  * cells) and rebuilt only when the data or layout changes — never per frame.
  * The inspection overlay rides on shared values instead.
  */
-export function Heatmap({ set, size, focused, selected, onSelect }: Props) {
+export const Heatmap = React.memo(function Heatmap({ set, size, focused, selected, onSelect }: Props) {
   const theme = useTheme();
   const n = set.tickers.length;
   const cell = size / n;
@@ -83,24 +83,44 @@ export function Heatmap({ set, size, focused, selected, onSelect }: Props) {
   const active = useSharedValue(-1); // row * n + col, or −1
   const overlay = useSharedValue(0);
 
-  // Keep the shared value in step with selection owned by the screen.
+  // Sync on the encoded NUMBER, not the object: the screen hands back a fresh
+  // {row, col} every tap, and depending on its identity re-ran this effect —
+  // and re-registered the reaction below — on every render.
+  const encoded = selected ? selected.row * n + selected.col : -1;
   useEffect(() => {
-    active.value = selected ? selected.row * n + selected.col : -1;
-    overlay.value = withTiming(selected ? 1 : 0, { duration: motion.fast });
-  }, [selected, n, active, overlay]);
+    active.value = encoded;
+    overlay.value = withTiming(encoded >= 0 ? 1 : 0, { duration: motion.fast });
+  }, [encoded, active, overlay]);
 
-  const report = (encoded: number) => {
-    if (encoded < 0) return;
-    onSelect({ row: Math.floor(encoded / n), col: encoded % n });
-  };
+  // Stable callback identity so the reaction registers once.
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const report = useCallback(
+    (value: number) => {
+      if (value < 0) return;
+      onSelectRef.current({ row: Math.floor(value / n), col: value % n });
+    },
+    [n],
+  );
+
+  // Dragging across the grid changes cells faster than the Taptic Engine can
+  // service; throttle so a fast sweep can't flood the native haptic queue.
+  const lastTick = useRef(0);
+  const tickThrottled = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTick.current < 40) return;
+    lastTick.current = now;
+    tick();
+  }, []);
 
   useAnimatedReaction(
     () => active.value,
     (cur, prev) => {
       if (cur === prev || cur < 0) return;
       runOnJS(report)(cur);
-      if (prev !== null && prev >= 0) runOnJS(tick)();
+      if (prev !== null && prev >= 0) runOnJS(tickThrottled)();
     },
+    [report, tickThrottled],
   );
 
   const gesture = useMemo(() => {
@@ -181,4 +201,4 @@ export function Heatmap({ set, size, focused, selected, onSelect }: Props) {
       </Animated.View>
     </GestureDetector>
   );
-}
+});
