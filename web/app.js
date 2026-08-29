@@ -812,7 +812,7 @@
   }
 
   // ---------- Ticker ----------
-  var tickerState = { win: '6M' };
+  var tickerState = { win: '6M', details: false };
   function tickerScreen(params, anim) {
     var sym = params.symbol, list = params.list;
     var s = bySymbol[sym], chart = getChart(sym);
@@ -872,35 +872,88 @@
     controls.appendChild(winWrap);
     body.appendChild(controls);
 
+    /* --- key statistics -----------------------------------------------------
+       Three things, in the order a decision needs them: how strong the
+       momentum is, where the price sits inside its own trend, and whether that
+       trend is strengthening or slowing. Each is a phrase first and a figure
+       second.
+
+       The sixteen-stat grid this replaces was mostly restating itself.
+       Vol-adjusted is blended over volatility (corr 1.0000 with the two shown
+       beside it), "6-1 vs 12-1" was literally two neighbouring rows
+       subtracted, trend phase was a function of the slope sign and the
+       acceleration, and the fitted slope tracks blended momentum at 0.862.
+       None of that is deleted -- it moved behind Details, where a reader who
+       wants the workings can still find them. */
+    var ch = channelOf(s.symbol), acc = accelOf(s.symbol);
+    var key = h('div', 'keystats');
+
+    var hero = h('div', 'hero');
+    hero.appendChild(h('div', 'l', 'Momentum'));
+    hero.appendChild(h('div', 'v num ' + (s.blended >= 0 ? 'pos' : 'neg'), pct(s.blended)));
+    hero.appendChild(h('div', 'meta num',
+      '#' + s.rankBlended + ' of ' + D.meta.rankedCount + '  ·  #' + s.rankVolAdj + ' vol-adjusted'));
+    key.appendChild(hero);
+
+    /** Label and phrase on the left, the supporting figure and any bar right. */
+    function keyRow(label, word, tone, viz, figure) {
+      var r = h('div', 'keyrow');
+      var left = h('div', 'k');
+      left.appendChild(h('div', 'l', label));
+      left.appendChild(h('div', 'w' + (tone ? ' ' + tone : ''), word));
+      r.appendChild(left);
+      if (viz) r.appendChild(viz);
+      r.appendChild(h('div', 's num', figure));
+      return r;
+    }
+
+    // Toned by the same Trend.zone as the ranking row's dot, and carrying the
+    // very same bar, so the two screens cannot disagree.
+    var zone = Trend.zone(ch);
+    key.appendChild(keyRow('Price vs trend', Trend.positionLabel(ch),
+      zone === 'buy' ? 'pos' : zone === 'extended' ? 'neg' : '',
+      channelBar(s.symbol), sigText(ch)));
+
+    var az = Trend.accelZone(acc);
+    key.appendChild(keyRow('Trend change', Trend.changeLabel(acc),
+      az === 'improving' ? 'pos' : az === 'worsening' ? 'neg' : '',
+      null, accelText(acc)));
+    body.appendChild(key);
+
     var stats = h('div', 'stats');
-    [['Blended momentum', pct(s.blended), s.blended >= 0 ? 'pos' : 'neg'],
+    [['12\u20131 momentum', pct(s.m12), ''],
+     ['6\u20131 momentum', pct(s.m6), ''],
+     ['6\u20131 vs 12\u20131', pct(s.m6 - s.m12), s.m6 >= s.m12 ? 'pos' : 'neg'],
      ['Vol-adjusted', ratio(s.volAdj), s.volAdj >= 0 ? 'pos' : 'neg'],
-     ['12–1 momentum', pct(s.m12), ''],
-     ['6–1 momentum', pct(s.m6), ''],
-     ['Last session', dayText(chart), dayTone(chart)],
-     // Same Trend.zone as the row's dot, so the two cannot disagree.
-     ['Trend channel', sigText(channelOf(s.symbol)),
-       (function () { var z = Trend.zone(channelOf(s.symbol));
-         return z === 'buy' ? 'pos' : z === 'extended' ? 'neg' : ''; })()],
-     ['Trend fit (R²)', (function () { var c = channelOf(s.symbol);
-        return !c || c.r2 === null ? '—' : c.r2.toFixed(2); })(), ''],
-     ['Trend slope', (function () { var c = channelOf(s.symbol);
-        return !c ? '—' : pct(c.slopeAnnualised) + ' log'; })(), ''],
-     ['Trend acceleration', accelText(accelOf(s.symbol)),
-       (function () { var z = Trend.accelZone(accelOf(s.symbol));
-         return z === 'improving' ? 'pos' : z === 'worsening' ? 'neg' : ''; })()],
-     ['Trend phase', Trend.phase(channelOf(s.symbol), accelOf(s.symbol)) || '—', ''],
-     ['6–1 vs 12–1', pct(s.m6 - s.m12), s.m6 >= s.m12 ? 'pos' : 'neg'],
      ['Volatility (126d)', (s.vol * 100).toFixed(1) + '%', ''],
-     ['52-week range', money(s.wk52Low) + ' – ' + money(s.wk52High), ''],
-     ['Rank · momentum', '#' + s.rankBlended, ''],
-     ['Rank · vol-adjusted', '#' + s.rankVolAdj, ''],
+     ['Trend slope', ch ? pct(ch.slopeAnnualised) + ' log' : '\u2014', ''],
+     ['Trend fit (R\u00b2)', !ch || ch.r2 === null ? '\u2014' : ch.r2.toFixed(2), ''],
+     ['Trend acceleration', accelText(acc), ''],
+     ['Last session', dayText(chart), dayTone(chart)],
+     ['52-week range', money(s.wk52Low) + ' \u2013 ' + money(s.wk52High), ''],
      ['Sector', s.sector, '']].forEach(function (st) {
       var cell = h('div', 'stat');
       cell.appendChild(h('div', 'l', st[0]));
       cell.appendChild(h('div', 'v num' + (st[2] ? ' ' + st[2] : ''), st[1]));
       stats.appendChild(cell);
     });
+
+    /* Toggled in place rather than through render(): a re-render would rebuild
+       the chart and throw away the reader's scroll position. */
+    var moreBtn = h('button', 'detailsbtn');
+    var caret = h('span', 'caret', '\u203a');
+    var moreLabel = h('span', '', 'Details');
+    moreBtn.appendChild(moreLabel);
+    moreBtn.appendChild(caret);
+    function paintDetails() {
+      stats.hidden = !tickerState.details;
+      moreBtn.className = 'detailsbtn' + (tickerState.details ? ' open' : '');
+      moreLabel.textContent = tickerState.details ? 'Hide details' : 'Details';
+      moreBtn.setAttribute('aria-expanded', tickerState.details ? 'true' : 'false');
+    }
+    moreBtn.onclick = function () { haptic(); tickerState.details = !tickerState.details; paintDetails(); };
+    paintDetails();
+    body.appendChild(moreBtn);
     body.appendChild(stats);
     sc.appendChild(body);
 

@@ -193,7 +193,41 @@ var Trend = (function () {
     return a > 0 ? 'falling, improving' : 'falling, worsening';
   }
 
+  /* --- plain language -----------------------------------------------------
+     The ticker screen leads with these and keeps the sigma figure as
+     supporting detail. They live here so the words and the thresholds they
+     describe cannot drift apart, and so the boundaries can be tested. */
+
+  /** Beyond this the trend is changing markedly rather than merely drifting. */
+  var ACCEL_STRONG = 1.5;
+
+  /** Where the price sits, as a phrase. Mirrors zone() and its weak override. */
+  function positionLabel(ch) {
+    if (!ch || ch.z === null || isWeak(ch)) return 'No clear trend';
+    var z = ch.z;
+    if (z < -BAND_OUTER) return 'Far below trend';
+    if (z < -BAND_INNER) return 'Pulled back';
+    if (z <= BAND_INNER) return 'At its trend';
+    if (z <= BAND_OUTER) return 'Extended';
+    return 'Far above trend';
+  }
+
+  /**
+   * What the trend itself is doing, as a phrase. Five bands rather than three:
+   * over the current universe the 0.5 and 1.5 cuts split 127 / 81 / 81 / 97 /
+   * 114, so none of them swallows the list.
+   */
+  function changeLabel(a) {
+    if (a === null || a === undefined) return '—';
+    if (Math.abs(a) <= ACCEL_FLAT) return 'Stable';
+    if (a > 0) return a > ACCEL_STRONG ? 'Strengthening fast' : 'Strengthening';
+    return a < -ACCEL_STRONG ? 'Slowing sharply' : 'Slowing';
+  }
+
   return {
+    ACCEL_STRONG: ACCEL_STRONG,
+    positionLabel: positionLabel,
+    changeLabel: changeLabel,
     WINDOW: WINDOW,
     FAST: FAST,
     SLOW: SLOW,

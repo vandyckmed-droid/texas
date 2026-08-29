@@ -38,6 +38,10 @@ body{
    (their min-height:auto collapses to 0) — the screen scrolls instead. */
 .screen > *{flex-shrink:0}
 .num{font-variant-numeric:tabular-nums}
+/* A display rule of our own outranks the user agent's [hidden] sheet, so
+   .stats{display:flex} kept the details grid on screen while its hidden
+   property read true. Assert visibility, not the attribute. */
+[hidden]{display:none !important}
 button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
 
 /* header — one compact line. The tab bar names the screen, so no title. */
@@ -152,7 +156,30 @@ button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
 .chartwrap{position:relative; overflow:hidden; padding:0 10px; touch-action:pan-y}
 .controls{display:flex; padding:12px 16px 0}
 .controls .win{flex:1}
-.stats{display:flex; flex-wrap:wrap; padding:20px 16px}
+/* key statistics — a deliberate hierarchy rather than a grid of everything.
+   The momentum figure leads; position and trend change follow as phrases with
+   their sigma figure kept subordinate; the rest sits behind Details. */
+.keystats{padding:18px 16px 0}
+.hero .l{font-size:12px; color:var(--text-3); letter-spacing:.2px}
+.hero .v{font-size:30px; font-weight:700; letter-spacing:.2px; margin-top:1px}
+.hero .meta{font-size:12.5px; color:var(--text-2); margin-top:3px}
+.keyrow{display:flex; align-items:center; gap:12px; padding:14px 0 0; margin-top:14px;
+  border-top:.5px solid var(--sep)}
+.keyrow .k{flex:1; min-width:0}
+.keyrow .l{font-size:12px; color:var(--text-3)}
+/* The phrase is the headline here, so it outweighs the figure beside it. */
+.keyrow .w{font-size:16px; font-weight:600; margin-top:2px}
+.keyrow .s{font-size:13px; font-weight:500; color:var(--text-3); flex:none}
+
+.detailsbtn{display:flex; align-items:center; gap:4px; width:100%; margin-top:16px;
+  padding:14px 16px; font-size:13px; font-weight:600; color:var(--text-2);
+  border-top:.5px solid var(--sep)}
+.detailsbtn .caret{display:inline-block; font-size:15px; line-height:1;
+  transition:transform .18s ease}
+.detailsbtn.open .caret{transform:rotate(90deg)}
+.detailsbtn:active{background:var(--fill)}
+
+.stats{display:flex; flex-wrap:wrap; padding:4px 16px 20px}
 .stat{width:50%; padding:8px 8px 8px 0}
 .stat .l{font-size:12px; color:var(--text-3)}
 .stat .v{font-size:15px; font-weight:500; margin-top:2px}

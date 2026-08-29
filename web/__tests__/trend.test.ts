@@ -310,6 +310,75 @@ test('acceleration is its own axis, and splits the buy zone', () => {
     'inside the buy zone, position and acceleration must stay independent');
 });
 
+// ---------- plain language ----------
+
+/**
+ * The ticker screen leads with these phrases, so their boundaries are what a
+ * reader actually acts on. They must agree with zone()/accelZone rather than
+ * drifting into a second, softer set of thresholds.
+ */
+test('positionLabel walks the channel and agrees with zone()', () => {
+  const at = (z: number) => T.positionLabel({ r2: 0.9, z });
+  assert.equal(at(-3), 'Far below trend');
+  assert.equal(at(-2.01), 'Far below trend');
+  assert.equal(at(-2), 'Pulled back');
+  assert.equal(at(-0.51), 'Pulled back');
+  assert.equal(at(-0.5), 'At its trend');
+  assert.equal(at(0), 'At its trend');
+  assert.equal(at(0.5), 'At its trend');
+  assert.equal(at(0.51), 'Extended');
+  assert.equal(at(2), 'Extended');
+  assert.equal(at(2.01), 'Far above trend');
+  // Every phrase the coloured zones claim must match the zone itself.
+  for (const z of [-3, -2, -1, -0.5, 0, 0.5, 1, 2, 3]) {
+    const ch = { r2: 0.9, z };
+    if (T.zone(ch) === 'buy') assert.equal(T.positionLabel(ch), 'Pulled back');
+    if (T.zone(ch) === 'extended') assert.equal(T.positionLabel(ch), 'Extended');
+  }
+});
+
+test('a fit too weak to read says so instead of naming a position', () => {
+  // V sits +2.24 sigma out on an R2 of 0.02: "Far above trend" would be a lie.
+  assert.equal(T.positionLabel({ r2: 0.02, z: 2.24 }), 'No clear trend');
+  assert.equal(T.positionLabel({ r2: 0.05, z: -1.2 }), 'No clear trend');
+  assert.equal(T.positionLabel(null), 'No clear trend');
+  assert.equal(T.positionLabel({ r2: 0.9, z: null }), 'No clear trend');
+});
+
+test('changeLabel has five bands and is symmetric about stable', () => {
+  const at = (a: number | null) => T.changeLabel(a);
+  assert.equal(at(0), 'Stable');
+  assert.equal(at(T.ACCEL_FLAT), 'Stable');
+  assert.equal(at(-T.ACCEL_FLAT), 'Stable');
+  assert.equal(at(T.ACCEL_FLAT + 0.01), 'Strengthening');
+  assert.equal(at(T.ACCEL_STRONG), 'Strengthening');
+  assert.equal(at(T.ACCEL_STRONG + 0.01), 'Strengthening fast');
+  assert.equal(at(-T.ACCEL_FLAT - 0.01), 'Slowing');
+  assert.equal(at(-T.ACCEL_STRONG), 'Slowing');
+  assert.equal(at(-T.ACCEL_STRONG - 0.01), 'Slowing sharply');
+  assert.equal(at(null), '\u2014');
+  // A phrase must never contradict the colour beside it.
+  for (const a of [-4, -2, -1, -0.5, 0, 0.5, 1, 2, 4]) {
+    if (T.accelZone(a) === 'improving') assert.ok(at(a).startsWith('Strengthening'));
+    if (T.accelZone(a) === 'worsening') assert.ok(at(a).startsWith('Slowing'));
+    if (T.accelZone(a) === '') assert.equal(at(a), 'Stable');
+  }
+});
+
+test('the five bands each carry a real share of the universe', () => {
+  const rankings = readJson('data/rankings.json');
+  const counts: Record<string, number> = {};
+  for (const s of rankings.stocks as { fileKey: string }[]) {
+    const c = readJson(`data/charts/${s.fileKey}.json`).c as number[];
+    const label = T.changeLabel(T.acceleration(c, T.channel(c)));
+    counts[label] = (counts[label] || 0) + 1;
+  }
+  assert.deepEqual(counts, {
+    'Slowing sharply': 127, Slowing: 81, Stable: 81,
+    Strengthening: 97, 'Strengthening fast': 114,
+  });
+});
+
 // ---------- cross-check against an independent implementation ----------
 
 /**

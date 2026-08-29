@@ -260,11 +260,32 @@ change at all.
   **lightweight-charts** (v5). Real time and price axes, a magnet crosshair with
   synced axis labels, and pan and pinch-zoom. Chevrons walk the list you arrived
   from without going back. The
-  stat grid includes 6–1 vs 12–1, the momentum-deceleration spread, and the
-  channel position, fit and slope, plus trend acceleration and the phase it
-  implies (`rising, slowing` / `falling, improving` and the other two). Position
-  and acceleration are toned by the same `Trend.zone` and `Trend.accelZone` as
-  the rows, so the two screens cannot disagree.
+  statistics answer three questions, in the order a decision needs them:
+
+  | | |
+  |---|---|
+  | How strong is the momentum? | `+199.8%`, with its rank and vol-adjusted rank |
+  | Where is price in its trend? | **Pulled back**, with the channel bar and `−1.60σ` |
+  | Is the trend strengthening? | **Slowing sharply**, with `−2.53σ` |
+
+  Each leads with a phrase and keeps the figure subordinate. `Trend.positionLabel`
+  and `Trend.changeLabel` produce the words, next to the thresholds they
+  describe so the two cannot drift; both are toned by the same `Trend.zone` and
+  `Trend.accelZone` as the ranking rows, and the position row carries that row's
+  very bar, so the screens cannot disagree. A fit too weak to read says
+  *No clear trend* rather than naming a position — V sits +2.24σ out on an R² of
+  0.02, where "far above trend" would be a lie.
+
+  Everything else lives behind **Details**, collapsed by default: the raw 12–1
+  and 6–1 legs, their spread, vol-adjusted, volatility, the fitted slope, R²,
+  the acceleration figure, the last session, the 52-week range and the sector.
+  The grid this replaced showed sixteen statistics that largely restated each
+  other — vol-adjusted is blended over volatility (correlation 1.0000 with the
+  two shown beside it), "6–1 vs 12–1" was two neighbouring rows subtracted, the
+  trend phase was a function of the slope sign and the acceleration, and the
+  fitted slope tracks blended momentum at 0.862. Nothing was deleted; it stopped
+  competing with the signal. Details toggles in place rather than through
+  `render()`, which would rebuild the chart and drop the reader's scroll.
 
   The fitted line and its ±2σ bands were briefly drawn under the price and were
   removed: the chart is for reading price, and the channel is already stated
@@ -337,6 +358,12 @@ actually runs, not copies of it, so those tests cover what ships.
 They also earn their keep on cleanups: deleting the chart's morph helpers took
 `lerpColor` with them, and the bucket-colour tests failed immediately because
 `bucketColor` still reaches it. It went back as an internal function.
+
+A screenshot is worth more than an assertion about an attribute: `.stats` set
+its `hidden` property correctly while `.stats{display:flex}` outranked the user
+agent's `[hidden]` rule and kept the details grid on screen. The suite now
+measures painted height, and `[hidden]{display:none !important}` makes the
+attribute mean what it says.
 
 The browser-driven suites compare *decoded pixels*, not PNG bytes. A one-pixel
 layout shift changes almost every byte of an encoded PNG, so a byte diff
