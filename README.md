@@ -281,6 +281,23 @@ change at all.
   Candlesticks are now one option change away, but they would need OHLC in the
   payload, which `web/build.ts` strips — roughly four times the chart bytes.
 
+  **Gestures are split between the page and the chart, deliberately.** The
+  library sets `touch-action` nowhere and relies on the host page for it, so
+  without a rule the browser claims pinch as page zoom and the chart never sees
+  it. `.chartwrap` carries `touch-action: pan-y`: vertical drag scrolls the page
+  (the chart sits inside a scrolling screen, and `vertTouchDrag` is off for the
+  same reason), while horizontal pan and pinch reach the chart. `none` would
+  work for the chart and leave a 290px dead zone that the page could not scroll
+  through.
+
+  Either axis can be dragged to stretch it. The window buttons name a *time*
+  window, so a price-axis stretch leaves the selected button correct — but the
+  view still needs a way back, so `segmented()` takes an `alwaysFire` flag and
+  re-tapping the current window resets both axes, `autoScale` included. A pinch
+  or pan that moves the view somewhere no button describes deselects them all,
+  and the header then measures from the first visible bar instead of naming a
+  window it is no longer showing.
+
   Two foot-guns worth recording. The chart owns a `ResizeObserver` and
   document-level listeners that dropping its container does not release, so
   `render()` calls `chart.remove()` first — without it every chevron press
@@ -315,3 +332,10 @@ actually runs, not copies of it, so those tests cover what ships.
 They also earn their keep on cleanups: deleting the chart's morph helpers took
 `lerpColor` with them, and the bucket-colour tests failed immediately because
 `bucketColor` still reaches it. It went back as an internal function.
+
+The browser-driven suites compare *decoded pixels*, not PNG bytes. A one-pixel
+layout shift changes almost every byte of an encoded PNG, so a byte diff
+reported two identical price axes as different and sent a real investigation
+chasing a bug that did not exist. They also park the pointer off-chart before
+capturing: a crosshair badge is drawn onto the price axis and is not part of
+the scale.

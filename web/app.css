@@ -155,7 +155,12 @@ button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
    dimensions distorts the bitmap it renders into. The side padding is not
    cosmetic: the time scale pins the first and last bar to the container edge,
    so their axis labels are centred on it and lose half their width without it. */
-.chartwrap{position:relative; overflow:hidden; padding:0 10px}
+/* The library sets touch-action nowhere and relies on the host page for it,
+   so without this the browser claims pinch as page zoom and the chart never
+   sees the gesture. pan-y rather than none: vertical drag belongs to the page
+   (the chart sits in a scrolling screen and vertTouchDrag is off), while
+   horizontal pan and pinch belong to the chart. */
+.chartwrap{position:relative; overflow:hidden; padding:0 10px; touch-action:pan-y}
 .controls{display:flex; padding:12px 16px 0}
 .controls .win{flex:1}
 .stats{display:flex; flex-wrap:wrap; padding:20px 16px}
