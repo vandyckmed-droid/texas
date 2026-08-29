@@ -93,14 +93,6 @@ var Trend = (function () {
     };
   }
 
-  /**
-   * Fitted log price at bar `i` of the regression window, offset by `k` sigma.
-   * The chart draws the centre line and the ±1σ / ±2σ bands from this.
-   */
-  function fittedAt(ch, i, k) {
-    return ch.intercept + ch.slope * i + (k || 0) * ch.sigma;
-  }
-
   /** Fit quality below which the channel is noise and must not read as signal. */
   var WEAK_R2 = 0.20;
 
@@ -108,33 +100,44 @@ var Trend = (function () {
     return !ch || ch.r2 === null || ch.r2 < WEAK_R2;
   }
 
-  /** |z| at which a position counts as an extreme, and where the ticks sit. */
-  var FAR = 2;
+  /** Inside this the price is effectively sitting on its own trend line. */
+  var BAND_INNER = 0.5;
+  /** Outside this the deviation is too large to read as pullback or extension. */
+  var BAND_OUTER = 2;
 
   /**
-   * Which marker a channel earns: 'near', 'far', or 'weak'.
+   * Where the last close sits, as one of 'buy', 'extended' or '' (neutral).
    *
-   * Trust gates salience. A weak fit stays quiet *however extreme* its z,
-   * because that z is not interpretable — the precedence is strict, not a
-   * blend. This is not a hypothetical: 18 of the 500 ranked names are both
-   * R2 < 0.20 and |z| >= 2, among them V at z +2.24 on an R2 of 0.02 and
-   * NWS/NWSA at R2 0.00. Ranked by magnitude alone those 18 would be the
-   * loudest marks in the list while being the least meaningful ones.
+   * The single source for both the dot's colour and the buy-zone filter, so the
+   * list can never show a name whose dot is not green.
+   *
+   * The scale is deliberately not monotonic — neutral, green, neutral, red,
+   * neutral. Past 2 sigma the extremes are not more of the same signal, they
+   * are a different situation: a name 3 sigma under its own trend is likelier
+   * broken than cheap. Both ends therefore go quiet rather than louder.
+   *
+   * A weak fit is neutral whatever its z, and so never passes the filter. That
+   * override matters: 71 of the 500 sit in a coloured band on a channel that
+   * explains almost none of their price action — V would read as extended on an
+   * R2 of 0.02. None of the current top-50 buy-zone names is a weak fit, so it
+   * costs nothing where it is actually used.
    */
-  function marker(ch) {
-    if (!ch || ch.z === null || isWeak(ch)) return 'weak';
-    return Math.abs(ch.z) >= FAR ? 'far' : 'near';
+  function zone(ch) {
+    if (!ch || ch.z === null || isWeak(ch)) return '';
+    if (ch.z >= -BAND_OUTER && ch.z < -BAND_INNER) return 'buy';
+    if (ch.z > BAND_INNER && ch.z <= BAND_OUTER) return 'extended';
+    return '';
   }
 
   return {
     WINDOW: WINDOW,
     EPS: EPS,
     WEAK_R2: WEAK_R2,
-    FAR: FAR,
+    BAND_INNER: BAND_INNER,
+    BAND_OUTER: BAND_OUTER,
     channel: channel,
-    fittedAt: fittedAt,
     isWeak: isWeak,
-    marker: marker,
+    zone: zone,
   };
 })();
 

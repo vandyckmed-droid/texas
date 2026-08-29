@@ -25,6 +25,7 @@
     appearance: loadLS('texas.web.appearance', 'system'),
     watch: loadLS('texas.web.watch', []),
     showAll: loadLS('texas.web.showAll', false),
+    buyOnly: loadLS('texas.web.buyOnly', false),
     stack: [], // pushed routes: {screen:'ticker'|'correlation', params}
   };
 
@@ -314,7 +315,19 @@
     // 31px heading repeating the label cost a row of stocks.
     var hdr = h('div', 'hdr');
     var age = ageNote();
-    var sub = h('div', 'sub', (S.showAll ? 'All ' + D.meta.rankedCount : 'Top 50 of ' + D.meta.rankedCount) +
+    // Computed here because the header has to name what the list is showing:
+    // a short list with no explanation reads as a bug.
+    var ranked = D.rankings.stocks.slice().sort(function (a, b) {
+      return rankOf(a, S.mode) - rankOf(b, S.mode);
+    });
+    var pool = S.showAll ? ranked : ranked.slice(0, 50);
+    var buyCount = pool.filter(function (st) { return inBuyZone(st.symbol); }).length;
+    var shown = S.buyOnly ? pool.filter(function (st) { return inBuyZone(st.symbol); }) : pool;
+
+    var scope = S.showAll ? 'all ' + D.meta.rankedCount : 'top 50';
+    var sub = h('div', 'sub', (S.buyOnly
+      ? buyCount + ' in buy zone of ' + scope
+      : S.showAll ? 'All ' + D.meta.rankedCount : 'Top 50 of ' + D.meta.rankedCount) +
       ' · ' + longDate(D.meta.asOf));
     if (age) {
       var warn = h('span', 'stale' + (age.severe ? ' severe' : ''),
@@ -342,14 +355,21 @@
     // The channel is the one row viz whose scale is not self-evident: a dot on
     // a track says nothing about sigma. The others encode a percentage or a
     // price range that the number beside them already names.
-    if (S.rowViz === 'channel') sc.appendChild(channelLegend());
-    var ranked = D.rankings.stocks.slice().sort(function (a, b) {
-      return rankOf(a, S.mode) - rankOf(b, S.mode);
-    });
-    var shown = S.showAll ? ranked : ranked.slice(0, 50);
+    if (S.rowViz === 'channel' && !legendSeen) sc.appendChild(channelLegend());
+    sc.appendChild(buyChip(buyCount));
+
+    // Not an early return: widening to all 500 is the natural next move when
+    // the top 50 has nothing, so the button below has to stay reachable.
+    if (!shown.length) {
+      sc.appendChild(emptyState('◎', 'Nothing in the buy zone',
+        'No name in the ' + scope + ' is between −' + Trend.BAND_OUTER + 'σ and −' +
+        Trend.BAND_INNER + 'σ of its trend right now.'));
+    }
+
     var list = h('div');
+    var listKey = 'ranks:' + S.mode + (S.showAll ? ':all' : '') + (S.buyOnly ? ':buy' : '');
     shown.forEach(function (st) {
-      list.appendChild(stockRow(st, rankOf(st, S.mode), 'ranks:' + S.mode + (S.showAll ? ':all' : '')));
+      list.appendChild(stockRow(st, rankOf(st, S.mode), listKey));
     });
     sc.appendChild(list);
 
@@ -509,41 +529,50 @@
    * ±3 rather than ±2 because the empirical spread of z across the universe is
    * 1.51σ, so a ±2 track would peg a fifth of the list at its ends.
    *
-   * Nothing here is coloured. Green/red would read as good/bad, and on this
-   * axis that reading is backwards: the name sitting 3σ *below* its own uptrend
-   * is the pullback, the one 3σ above is the stretched one. So position states
-   * direction, weight states extremeness, and fill states whether the channel
-   * can be trusted at all — see Trend.marker for that precedence.
+   * Colour comes from Trend.zone and runs the way the position trades: green
+   * below the trend line (a pullback), red above it (extended), neutral in the
+   * middle and neutral past ±2σ, where the deviation is too large to read as
+   * either. One dot size throughout — the hue carries it.
    */
   function channelBar(sym) {
     var c = channelOf(sym);
     var w = h('div', 'channel');
     w.appendChild(h('i', 'track'));
-    w.appendChild(channelTick('mark', channelX(-Trend.FAR)));
-    w.appendChild(channelTick('mark', channelX(Trend.FAR)));
+    w.appendChild(channelTick('mark', channelX(-Trend.BAND_OUTER)));
+    w.appendChild(channelTick('mark', channelX(Trend.BAND_OUTER)));
     w.appendChild(channelTick('mid', channelX(0)));
     if (!c || c.z === null) {
       w.title = sym + ': no fitted channel';
       return w;
     }
-    var mark = Trend.marker(c);
-    var dot = h('i', 'dot ' + mark);
+    var z = Trend.zone(c);
+    var dot = h('i', 'dot' + (z ? ' ' + z : ''));
     dot.style.left = (channelX(c.z) - CHANNEL_DOT / 2).toFixed(2) + 'px';
     w.appendChild(dot);
     w.title = sym + ' ' + sigText(c) + ' from its 252-day trend · fit R² ' +
       (c.r2 === null ? '—' : c.r2.toFixed(2)) +
-      (mark === 'weak' ? ' (too weak to read)' : '');
+      (Trend.isWeak(c) ? ' (too weak to read)' : '');
     return w;
   }
 
   /**
-   * The axis label for the channel column, shown once above the list.
+   * The axis label for the channel column.
+   *
+   * Shown once per launch and then retired: it answers "what is this column?"
+   * on arrival, and after that it is a line of chrome above every scroll. The
+   * flag is deliberately not persisted, so a fresh launch explains itself
+   * again; it is set as soon as the legend is built, so the re-render that a
+   * star tap or a mode switch causes cannot resurrect it mid-fade.
    *
    * Built from .row's own classes so every column width comes from the same
    * CSS rules the rows use — the legend cannot drift out of alignment with the
    * track it annotates without the rows moving too.
    */
+  var legendSeen = false;
+  var LEGEND_HOLD = 4000;
+
   function channelLegend() {
+    legendSeen = true;
     var el = h('div', 'chankey');
     el.appendChild(h('span', 'rank'));
     el.appendChild(h('span', 'namecol', 'Distance from 252-day trend'));
@@ -560,7 +589,30 @@
     el.appendChild(scale);
     el.appendChild(h('span', 'pricecol'));
     el.appendChild(h('span', 'star'));
+    // Collapsing the height rather than hiding it keeps the list from jumping.
+    setTimeout(function () { el.className = 'chankey gone'; }, LEGEND_HOLD);
     return el;
+  }
+
+  /** Names sitting in a readable pullback — the same predicate as the green dot. */
+  function inBuyZone(sym) {
+    return Trend.zone(channelOf(sym)) === 'buy';
+  }
+
+  function buyChip(count) {
+    var wrap = h('div', 'chipwrap');
+    var b = h('button', 'zonechip' + (S.buyOnly ? ' on' : ''),
+      'Buy zone · ' + count);
+    b.title = 'Only names between −' + Trend.BAND_OUTER + 'σ and −' +
+      Trend.BAND_INNER + 'σ of their 252-day trend';
+    b.onclick = function () {
+      haptic();
+      S.buyOnly = !S.buyOnly;
+      saveLS('texas.web.buyOnly', S.buyOnly);
+      render();
+    };
+    wrap.appendChild(b);
+    return wrap;
   }
 
   /** One formatting of the score, so row and ticker cannot drift apart. */
@@ -828,9 +880,10 @@
      ['12–1 momentum', pct(s.m12), ''],
      ['6–1 momentum', pct(s.m6), ''],
      ['Last session', dayText(chart), dayTone(chart)],
-     // Untoned on purpose: below-trend is not "bad". Colouring it would have
-     // the ticker contradict the row, which states direction by position only.
-     ['Trend channel', sigText(channelOf(s.symbol)), ''],
+     // Same Trend.zone as the row's dot, so the two cannot disagree.
+     ['Trend channel', sigText(channelOf(s.symbol)),
+       (function () { var z = Trend.zone(channelOf(s.symbol));
+         return z === 'buy' ? 'pos' : z === 'extended' ? 'neg' : ''; })()],
      ['Trend fit (R²)', (function () { var c = channelOf(s.symbol);
         return !c || c.r2 === null ? '—' : c.r2.toFixed(2); })(), ''],
      ['Trend slope', (function () { var c = channelOf(s.symbol);
@@ -904,7 +957,6 @@
       var wk = built[tickerState.win];
       var vmin = Math.min.apply(null, wk.slice), vmax = Math.max.apply(null, wk.slice);
       drawAxis(cur.lo, cur.hi, vmin, vmax);
-      drawChannel(wk.n);
       ctx.beginPath();
       for (var k = 0; k < LINE_POINTS; k++) {
         var x = (k / (LINE_POINTS - 1)) * plotW, y = yFor(cur.pts[k], cur.lo, cur.hi);
@@ -931,48 +983,6 @@
       }
       if (animFrom) raf = requestAnimationFrame(draw);
     }
-    /**
-     * The 252-day regression channel, under the price line.
-     *
-     * The fit lives in log space and the chart plots price, so every band is
-     * exp()'d back before mapping. Bands routinely fall outside the window's
-     * y-domain, so the whole thing is clipped to the plot rect — otherwise a
-     * band would paint across the axis labels in the right-hand gutter.
-     *
-     * Not drawn when the fit is weak: a channel over something that is not a
-     * trend would read as structure that is not there.
-     */
-    function drawChannel(nBars) {
-      var ch = channelOf(s.symbol);
-      if (!ch || Trend.isWeak(ch)) return;
-      var len = chart.c.length;
-      // Bar k of the window is series index len-nBars+k, which is index
-      // (252 - nBars + k) within the regression window.
-      var offset = ch.n - nBars;
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, PAD, plotW, HEIGHT - 2 * PAD);
-      ctx.clip();
-      [[0, 0.9, 4], [2, 0.55, 0], [-2, 0.55, 0]].forEach(function (spec) {
-        var k = spec[0], alpha = spec[1], dash = spec[2];
-        ctx.beginPath();
-        var started = false;
-        for (var i = 0; i < nBars; i++) {
-          var ri = offset + i;
-          if (ri < 0 || ri >= ch.n) continue;
-          var x = (i / Math.max(1, nBars - 1)) * plotW;
-          var y = yFor(Math.exp(Trend.fittedAt(ch, ri, k)), cur.lo, cur.hi);
-          if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
-        }
-        ctx.setLineDash(dash ? [dash, dash] : []);
-        ctx.strokeStyle = withAlpha(css('--text-3'), alpha * 0.7);
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      });
-      ctx.setLineDash([]);
-      ctx.restore();
-    }
-
     function crosshair(cx, cy, color) {
       ctx.strokeStyle = css('--cross'); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(cx, PAD); ctx.lineTo(cx, HEIGHT - PAD); ctx.stroke();

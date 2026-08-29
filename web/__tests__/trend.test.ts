@@ -96,14 +96,6 @@ test('a custom window length is honoured', () => {
 
 // ---------- fitted line and fit quality ----------
 
-test('fittedAt walks the centre line and offsets by whole sigma', () => {
-  const noisy = exact(252, 0.001).map((v, i) => v * Math.exp(Math.cos(i / 5) * 0.04));
-  const ch = T.channel(noisy);
-  assert.ok(Math.abs(T.fittedAt(ch, 0, 0) - ch.intercept) < 1e-12);
-  assert.ok(Math.abs(T.fittedAt(ch, 10, 0) - (ch.intercept + ch.slope * 10)) < 1e-12);
-  assert.ok(Math.abs(T.fittedAt(ch, 10, 2) - (T.fittedAt(ch, 10, 0) + 2 * ch.sigma)) < 1e-12);
-});
-
 test('isWeak flags an unfittable channel so noise cannot read as signal', () => {
   assert.equal(T.isWeak(null), true);
   assert.equal(T.isWeak({ r2: null }), true);
@@ -112,53 +104,75 @@ test('isWeak flags an unfittable channel so noise cannot read as signal', () => 
   assert.equal(T.isWeak({ r2: 0.9 }), false);
 });
 
-// ---------- marker precedence ----------
+// ---------- zones ----------
 
 /**
- * Trust gates salience. These assert the precedence is strict: a weak fit is
- * quiet however extreme its z, because that z is not interpretable. Getting
- * this backwards would give the least meaningful names the loudest marks.
+ * The boundary table, driven exactly. Getting a comparison backwards here would
+ * paint a pullback as extended, which is the mistake this scheme exists to fix.
  */
-test('a weak fit stays quiet however extreme its z', () => {
-  assert.equal(T.marker({ r2: 0.05, z: 2.7 }), 'weak');
-  assert.equal(T.marker({ r2: 0.02, z: -4.0 }), 'weak');
-  assert.equal(T.marker({ r2: 0.0, z: 3.1 }), 'weak');
+test('the zone boundaries are exactly where they are specified', () => {
+  const fit = (z: number) => ({ r2: 0.9, z });
+  assert.equal(T.zone(fit(-2.01)), '', 'past -2 sigma is too far below to read');
+  assert.equal(T.zone(fit(-2)), 'buy', 'the outer edge is inclusive');
+  assert.equal(T.zone(fit(-1.2)), 'buy');
+  assert.equal(T.zone(fit(-0.51)), 'buy');
+  assert.equal(T.zone(fit(-0.5)), '', 'the inner edge is exclusive');
+  assert.equal(T.zone(fit(0)), '');
+  assert.equal(T.zone(fit(0.5)), '');
+  assert.equal(T.zone(fit(0.51)), 'extended');
+  assert.equal(T.zone(fit(2)), 'extended', 'the outer edge is inclusive');
+  assert.equal(T.zone(fit(2.01)), '', 'past +2 sigma is too far above to read');
 });
 
-test('a trustworthy fit is emphasised only past the FAR threshold', () => {
-  assert.equal(T.marker({ r2: 0.9, z: 2.7 }), 'far');
-  assert.equal(T.marker({ r2: 0.9, z: -2.7 }), 'far');
-  assert.equal(T.marker({ r2: 0.9, z: T.FAR }), 'far', 'the threshold is inclusive');
-  assert.equal(T.marker({ r2: 0.9, z: 1.99 }), 'near');
-  assert.equal(T.marker({ r2: 0.9, z: 0 }), 'near');
+test('the scale is symmetric about the trend line', () => {
+  for (const z of [0.4, 0.6, 1.5, 2.0, 2.5, 3.4]) {
+    const lo = T.zone({ r2: 0.9, z: -z });
+    const hi = T.zone({ r2: 0.9, z });
+    assert.equal(lo === '', hi === '', `|z| ${z} should be neutral on both sides or neither`);
+  }
 });
 
-test('an absent or unscorable channel is weak, not near', () => {
-  assert.equal(T.marker(null), 'weak');
-  assert.equal(T.marker(undefined), 'weak');
-  assert.equal(T.marker({ r2: 0.9, z: null }), 'weak');
-  assert.equal(T.marker({ r2: null, z: 1 }), 'weak');
+test('a weak fit is neutral wherever it sits', () => {
+  assert.equal(T.zone({ r2: 0.05, z: -1.2 }), '', 'even squarely in the buy band');
+  assert.equal(T.zone({ r2: 0.02, z: 1.5 }), '');
+  assert.equal(T.zone({ r2: T.WEAK_R2 - 0.001, z: -1 }), '');
+  assert.equal(T.zone({ r2: T.WEAK_R2, z: -1 }), 'buy', 'the threshold itself is readable');
 });
 
-test('the marker split over the snapshot, and every weak-and-extreme name', () => {
+test('an absent or unscorable channel is neutral', () => {
+  assert.equal(T.zone(null), '');
+  assert.equal(T.zone(undefined), '');
+  assert.equal(T.zone({ r2: 0.9, z: null }), '');
+  assert.equal(T.zone({ r2: null, z: -1 }), '');
+});
+
+test('the buy zone over the snapshot, and no weak fit inside it', () => {
   const rankings = readJson('data/rankings.json');
-  const counts: Record<string, number> = { near: 0, far: 0, weak: 0 };
-  const weakAndExtreme: string[] = [];
+  const zoneOf = new Map<string, string>();
+  const chOf = new Map<string, { z: number; r2: number }>();
   for (const s of rankings.stocks as { symbol: string; fileKey: string }[]) {
     const ch = T.channel(readJson(`data/charts/${s.fileKey}.json`).c);
-    const m = T.marker(ch);
-    counts[m]++;
-    if (T.isWeak(ch) && Math.abs(ch.z) >= T.FAR) {
-      weakAndExtreme.push(s.symbol);
-      // The rule that matters: extreme but untrustworthy must not be emphasised.
-      assert.equal(m, 'weak', `${s.symbol} (z ${ch.z}, R2 ${ch.r2}) must stay quiet`);
-    }
+    chOf.set(s.symbol, ch);
+    zoneOf.set(s.symbol, T.zone(ch));
   }
-  assert.deepEqual(counts, { near: 293, far: 88, weak: 119 });
-  assert.equal(weakAndExtreme.length, 18);
-  // Named so a data refresh that changes the picture is visible in the diff.
-  for (const sym of ['V', 'NWS', 'NWSA', 'ADP', 'PAYX', 'LH']) {
-    assert.ok(weakAndExtreme.includes(sym), `${sym} should be weak-and-extreme`);
+  const top = (key: string) =>
+    [...(rankings.stocks as Record<string, never>[])]
+      .sort((a, b) => (a[key] as unknown as number) - (b[key] as unknown as number))
+      .slice(0, 50) as unknown as { symbol: string }[];
+
+  const buyIn = (key: string) => top(key).filter((s) => zoneOf.get(s.symbol) === 'buy');
+  assert.equal(buyIn('rankBlended').length, 14);
+  assert.equal(buyIn('rankVolAdj').length, 15);
+
+  // The override that keeps an unreadable channel out of a buy list.
+  for (const [sym, z] of zoneOf) {
+    if (z !== '') assert.equal(T.isWeak(chOf.get(sym)), false, `${sym} is weak but coloured ${z}`);
+  }
+
+  // Every buy-zone name really is below its own trend, never above it.
+  for (const [sym, z] of zoneOf) {
+    if (z === 'buy') assert.ok(chOf.get(sym)!.z < 0, `${sym} is in the buy zone but above trend`);
+    if (z === 'extended') assert.ok(chOf.get(sym)!.z > 0, `${sym} is extended but below trend`);
   }
 });
 
