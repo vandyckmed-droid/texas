@@ -176,6 +176,140 @@ test('the buy zone over the snapshot, and no weak fit inside it', () => {
   }
 });
 
+// ---------- trend acceleration ----------
+
+/** Deterministic iid noise, so "no acceleration" can be tested without a seed. */
+const lcg = (seed: number) => {
+  let x = seed;
+  return () => { x = (x * 1664525 + 1013904223) >>> 0; return x / 4294967296 - 0.5; };
+};
+const drift = (seed: number, slope: number, amp: number, n = 260) => {
+  const r = lcg(seed);
+  return Array.from({ length: n }, (_, i) => 100 * Math.exp(slope * i + r() * amp));
+};
+const accelOf = (closes: number[]) => T.acceleration(closes, T.channel(closes));
+
+test('a constant slope produces no acceleration on average', () => {
+  const vals: number[] = [];
+  for (let seed = 1; seed <= 200; seed++) {
+    const a = accelOf(drift(seed, 0.001, 0.06));
+    if (a !== null) vals.push(a);
+  }
+  assert.equal(vals.length, 200);
+  const mean = vals.reduce((x, y) => x + y, 0) / vals.length;
+  assert.ok(Math.abs(mean) < 0.1, `unbiased on a constant slope, got mean ${mean}`);
+  // The dead band is set at roughly the one-sigma noise level of this case.
+  const sd = Math.sqrt(vals.reduce((s2, x) => s2 + (x - mean) ** 2, 0) / vals.length);
+  assert.ok(sd > 0.3 && sd < 0.7, `noise sd ${sd} should bracket ACCEL_FLAT ${T.ACCEL_FLAT}`);
+});
+
+test('planted curvature is recovered with the right sign and symmetry', () => {
+  const curve = (c: number) =>
+    Array.from({ length: 260 }, (_, i) => 100 * Math.exp(0.002 * i + c * i * i));
+  const up = accelOf(curve(0.000004));
+  const down = accelOf(curve(-0.000004));
+  assert.ok(up > 0.5, `upward curvature should read positive, got ${up}`);
+  assert.ok(down < -0.5, `downward curvature should read negative, got ${down}`);
+  assert.ok(Math.abs(up + down) < 1e-6, 'equal and opposite curvature should mirror');
+});
+
+test('acceleration is guarded rather than returning nonsense', () => {
+  // An exact exponential has no scatter to normalise by.
+  assert.equal(accelOf(Array.from({ length: 260 }, (_, i) => 100 * Math.exp(0.002 * i))), null);
+  assert.equal(T.acceleration(drift(1, 0.001, 0.06), null), null);
+  // Needs the full slow window.
+  const short = drift(1, 0.001, 0.06, T.SLOW - 1);
+  assert.equal(T.acceleration(short, { sigma: 0.1, slope: 0 }), null);
+  assert.ok(T.acceleration(drift(1, 0.001, 0.06, T.SLOW), { sigma: 0.1, slope: 0 }) !== null);
+});
+
+test('accelZone has a dead band and is monotonic outside it', () => {
+  assert.equal(T.accelZone(T.ACCEL_FLAT + 0.001), 'improving');
+  assert.equal(T.accelZone(T.ACCEL_FLAT), '', 'the band edge is neutral');
+  assert.equal(T.accelZone(0), '');
+  assert.equal(T.accelZone(-T.ACCEL_FLAT), '');
+  assert.equal(T.accelZone(-T.ACCEL_FLAT - 0.001), 'worsening');
+  // Unlike zone(), the extremes stay coloured — the strongest readings are the
+  // most stable ones, so there is no "too far to read" case here.
+  assert.equal(T.accelZone(12), 'improving');
+  assert.equal(T.accelZone(-12), 'worsening');
+  assert.equal(T.accelZone(null), '');
+  assert.equal(T.accelZone(undefined), '');
+});
+
+test('phase names all four states plus the steady middle', () => {
+  const rise = { slope: 0.001 }, fall = { slope: -0.001 };
+  assert.equal(T.phase(rise, 2), 'rising, accelerating');
+  assert.equal(T.phase(rise, -2), 'rising, slowing');
+  assert.equal(T.phase(fall, 2), 'falling, improving');
+  assert.equal(T.phase(fall, -2), 'falling, worsening');
+  assert.equal(T.phase(rise, 0), 'rising, steady');
+  assert.equal(T.phase(fall, 0), 'falling, steady');
+  assert.equal(T.phase(null, 2), '');
+  assert.equal(T.phase(rise, null), '');
+});
+
+/**
+ * The windows are 42/126 on measurement, not taste. This pins the evidence:
+ * recompute every name with the last five sessions withheld, holding the
+ * normalising sigma fixed, and require the verdict to hold. At 21/63 the same
+ * check yields 26.4% and 13 — so the window cannot be changed back unnoticed.
+ */
+test('the window choice keeps the signal stable over five sessions', () => {
+  const rankings = readJson('data/rankings.json');
+  const now: number[] = [];
+  const prev: number[] = [];
+  for (const s of rankings.stocks as { fileKey: string }[]) {
+    const c = readJson(`data/charts/${s.fileKey}.json`).c as number[];
+    const ch = T.channel(c);
+    const a = T.acceleration(c, ch);
+    if (a === null) continue;
+    const held = c.slice(0, -5);
+    const f = T.channel(held, T.FAST), sl = T.channel(held, T.SLOW);
+    now.push(a);
+    prev.push(((f.slope - sl.slope) * T.FAST) / ch.sigma);
+  }
+  assert.equal(now.length, 500);
+  const flips = now.filter((v, i) => Math.sign(v) !== Math.sign(prev[i])).length;
+  assert.ok(flips / now.length <= 0.10, `${flips} of ${now.length} reversed in five sessions`);
+
+  // The names it is loudest about must not reverse at all.
+  const cut = now.map(Math.abs).sort((x, y) => y - x)[Math.floor(now.length * 0.25)];
+  const loud = now.map((_, i) => i).filter((i) => Math.abs(now[i]) >= cut);
+  const loudFlips = loud.filter((i) => Math.sign(now[i]) !== Math.sign(prev[i]));
+  assert.equal(loudFlips.length, 0, 'a strong reading must not reverse within a week');
+});
+
+test('acceleration is its own axis, and splits the buy zone', () => {
+  const rankings = readJson('data/rankings.json');
+  const rows = (rankings.stocks as { symbol: string; fileKey: string; rankBlended: number;
+    vol: number; m6: number; m12: number }[]).map((s) => {
+    const c = readJson(`data/charts/${s.fileKey}.json`).c as number[];
+    const ch = T.channel(c);
+    return { ...s, ch, a: T.acceleration(c, ch) as number, z: ch.z as number };
+  });
+  const corr = (a: number[], b: number[]) => {
+    const n = a.length, ma = a.reduce((x, y) => x + y, 0) / n, mb = b.reduce((x, y) => x + y, 0) / n;
+    let sa = 0, sb = 0, sab = 0;
+    for (let i = 0; i < n; i++) { const da = a[i] - ma, db = b[i] - mb; sa += da * da; sb += db * db; sab += da * db; }
+    return sab / Math.sqrt(sa * sb);
+  };
+  const acc = rows.map((r) => r.a);
+  // Volatility-neutral by construction of the normalisation, and not a
+  // restatement of the 6-1 vs 12-1 bar that is already on the ranking rows.
+  assert.ok(Math.abs(corr(acc, rows.map((r) => r.vol))) < 0.05);
+  assert.ok(Math.abs(corr(acc, rows.map((r) => r.m6 - r.m12))) < 0.15);
+
+  // The justification for the feature: inside the buy zone, where the decision
+  // is made, the dots look alike and the acceleration does not.
+  const buy = rows.filter((r) => r.rankBlended <= 50 && T.zone(r.ch) === 'buy');
+  assert.equal(buy.length, 14);
+  const spread = Math.max(...buy.map((r) => r.a)) - Math.min(...buy.map((r) => r.a));
+  assert.ok(spread > 4, `buy-zone acceleration should spread widely, got ${spread}`);
+  assert.ok(Math.abs(corr(buy.map((r) => r.z), buy.map((r) => r.a))) < 0.3,
+    'inside the buy zone, position and acceleration must stay independent');
+});
+
 // ---------- cross-check against an independent implementation ----------
 
 /**

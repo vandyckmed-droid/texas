@@ -150,6 +150,58 @@ weak override is what keeps an unreadable channel out of a buy list: 71 of the
 action (V would read as extended on an R² of 0.02). None of the current
 top-50 buy-zone names is a weak fit, so it costs nothing where it is used.
 
+**Trend acceleration** answers what the channel cannot: not where the price sits
+in its trend, but whether the trend itself is turning. A fast slope against a
+slower one, in units of the channel's own scatter:
+
+    accel = (β42 − β126) × 42 / σ252
+
+`channel(closes, n)` already fits an arbitrary window, so this is three existing
+calls rather than new regression code, and σ252 is already memoised per symbol.
+The `× 42` is a display scale, not statistics: the slope difference is log-price
+per day and σ is log-price, so multiplying by a day count makes the ratio
+dimensionless. Using the fast window puts the spread at sd 1.93 on the same ±3σ
+range the track already uses; every other multiplier is a rescale that leaves
+the ordering identical.
+
+**The windows are 42/126 on measurement, not taste.** Recomputing every name
+with the last five sessions withheld:
+
+| pair | corr(vol) | 5-day stability | sign flips | flips among strongest quartile |
+|---|---|---|---|---|
+| 21/63 | 0.43 | 0.71 | 26% | 12% |
+| **42/126** | **0.004** | **0.96** | **8%** | **0%** |
+| 63/189 | −0.23 | 0.98 | 5% | 0%, but too slow to be early |
+
+At 21/63 a quarter of the universe reverses its verdict inside a week and the
+score is 0.43 correlated with volatility — high-vol names score high simply for
+being volatile. At 42/126 that contamination is gone and the names the measure
+is loudest about never reverse. A test pins both figures against the committed
+snapshot, so the window cannot be changed back unnoticed.
+
+Two deliberate departures from the channel's rules:
+
+- **No weak-fit suppression.** A low R² means a straight line fits badly, and a
+  name that is accelerating is exactly one a straight line fits badly. Silencing
+  acceleration there would silence it where it is most informative.
+- **Colour is monotonic**, with only a dead band inside ±0.5σ (about the
+  one-sigma noise level on a constant-slope series). The channel's "too far to
+  read" argument does not apply, and the measurement points the other way: the
+  strongest quartile is the most stable of all.
+
+It is its own axis — `corr` with volatility 0.004, and −0.07 with the 6–1 vs
+12–1 bar, the other thing on screen that sounds like acceleration. Across all
+500 it correlates 0.63 with channel position, but that is not where it is used:
+**inside the buy zone the two are independent** (`corr` −0.17 across those 14
+names, spanning +0.79 to −3.87). They look identical on the dot. MU at rank 2
+reads as a textbook pullback and is still deteriorating at −2.53σ; LITE looks
+the same and is the one actually turning up.
+
+One limitation worth knowing: any fast-versus-slow comparison, this one
+included, cannot tell a turning trend from an oscillation whose period is near
+the window lengths. A planted 80-day cycle reads ±3σ on a series with no trend
+change at all.
+
 ## Screens
 
 - **Ranks** — top 50 by blended momentum or its vol-adjusted equivalent, with
@@ -170,6 +222,12 @@ top-50 buy-zone names is a weak fit, so it costs nothing where it is used.
   from the row's own CSS classes, so it cannot drift out of alignment with the
   track it annotates.
 
+- **Trend acceleration** — a seventh row visualisation on the same track, dot
+  green to the right (the trend is improving) and red to the left. Green sits on
+  the opposite side from the channel's green; the meaning — favourable — is the
+  same, and the two are never on screen together since the row visualisation is
+  a single choice. Paired with the buy-zone filter it answers the question the
+  filter raises: of the 14 names in a readable pullback, which are turning.
 - **Buy zone** — a toggle above the list collapses it to the names in a
   readable pullback: 14 of the current top 50, 110 of all 500. It is the same
   predicate as the green dot, so every row it shows is green and every green
@@ -198,8 +256,10 @@ top-50 buy-zone names is a weak fit, so it costs nothing where it is used.
   resamples to the same 253 points, so the two shapes interpolate. Drag for a
   crosshair. Chevrons walk the list you arrived from without going back. The
   stat grid includes 6–1 vs 12–1, the momentum-deceleration spread, and the
-  channel position, fit and slope — the position toned by the same `Trend.zone`
-  as the row's dot, so the two screens cannot disagree.
+  channel position, fit and slope, plus trend acceleration and the phase it
+  implies (`rising, slowing` / `falling, improving` and the other two). Position
+  and acceleration are toned by the same `Trend.zone` and `Trend.accelZone` as
+  the rows, so the two screens cannot disagree.
 
   The fitted line and its ±2σ bands were briefly drawn under the price and were
   removed: the chart is for reading price, and the channel is already stated
