@@ -160,6 +160,7 @@
   var LINE_POINTS = M.LINE_POINTS, BUCKETS = M.BUCKETS, WINDOWS = M.WINDOWS;
   var windowBars = M.windowBars, resampleToN = M.resampleToN, padDomain = M.padDomain;
   var withAlpha = M.withAlpha, lerpColor = M.lerpColor, bucketFor = M.bucketFor;
+  var dayChange = M.dayChange;
 
   /** Bucket colour against the live theme, which only the DOM can supply. */
   function bucketColor(b) {
@@ -270,6 +271,7 @@
     row.appendChild(nc);
     var viz = h('span', 'viz');
     viz.appendChild(S.rowViz === 'impact' ? deltaChip(s.symbol)
+      : S.rowViz === 'day' ? dayChip(s.symbol)
       : S.rowViz === 'trend' ? trendBar(s)
       : S.rowViz === 'range' ? rangeBar(s) : rollingBars(s));
     row.appendChild(viz);
@@ -440,6 +442,35 @@
     return drop === null ? null : -drop;
   }
 
+  /**
+   * Move over the snapshot's final session, from the closes already shipped.
+   * Labelled "last session" rather than "today" on purpose: the snapshot can be
+   * days old, and a percentage implies currency far more strongly than a chart
+   * does. The header's date and staleness warning carry the rest of the context.
+   */
+  /** Anything rounding to zero is flat, not a tiny loss: "−0.00%" is noise. */
+  function dayText(chart) {
+    var d = chart ? dayChange(chart.c) : null;
+    if (d === null) return '—';
+    var p = d * 100;
+    if (Math.abs(p) < 0.005) return '0.00%';
+    return (p > 0 ? '+' : '−') + Math.abs(p).toFixed(2) + '%';
+  }
+  function dayTone(chart) {
+    var d = chart ? dayChange(chart.c) : null;
+    if (d === null || Math.abs(d * 100) < 0.005) return '';
+    return d > 0 ? 'pos' : 'neg';
+  }
+
+  function dayChip(sym) {
+    var ch = getChart(sym);
+    var el = h('div', 'delta num', dayText(ch));
+    var tone = dayTone(ch);
+    el.className = 'delta num' + (tone ? ' ' + tone : ' none');
+    el.title = sym + ' over the last session in this snapshot (' + longDate(D.meta.asOf) + ')';
+    return el;
+  }
+
   function deltaChip(sym) {
     var d = worthOf(sym);
     var el = h('div', 'delta num');
@@ -570,6 +601,7 @@
     var vizCard = h('div', 'setcard');
     [['range', '52-week range', 'Low, high, and latest price'],
      ['rolling', 'Rolling blended score', 'Momentum score through time'],
+     ['day', 'Last session move', 'Change over the snapshot’s final trading day'],
      ['trend', 'Accelerating or fading', '6–1 momentum against 12–1'],
      ['impact', 'Watchlist impact', 'What starring or dropping it does to your score']].forEach(function (opt) {
       var on = S.rowViz === opt[0];
@@ -581,6 +613,7 @@
       var prev = h('span', 'prev');
       var sample = top50(S.mode)[0];
       prev.appendChild(opt[0] === 'impact' ? deltaChip(sample.symbol)
+        : opt[0] === 'day' ? dayChip(sample.symbol)
         : opt[0] === 'trend' ? trendBar(sample)
         : opt[0] === 'range' ? rangeBar(sample) : rollingBars(sample));
       row.appendChild(prev);
@@ -685,6 +718,7 @@
      ['Vol-adjusted', ratio(s.volAdj), s.volAdj >= 0 ? 'pos' : 'neg'],
      ['12–1 momentum', pct(s.m12), ''],
      ['6–1 momentum', pct(s.m6), ''],
+     ['Last session', dayText(chart), dayTone(chart)],
      ['6–1 vs 12–1', pct(s.m6 - s.m12), s.m6 >= s.m12 ? 'pos' : 'neg'],
      ['Volatility (126d)', (s.vol * 100).toFixed(1) + '%', ''],
      ['52-week range', money(s.wk52Low) + ' – ' + money(s.wk52High), ''],

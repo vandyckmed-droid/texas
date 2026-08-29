@@ -109,7 +109,15 @@ feeds a ranking.
   a toggle at the foot to show all 500. The row visualisation is chosen in
   Settings: a 52-week range bar, the rolling blended score, accelerating-or-
   fading (6–1 momentum against 12–1 — red at the top of a momentum list means
-  the move is old), or watchlist impact.
+  the move is old), the last session's move, or watchlist impact.
+
+  The last-session move is the final close against the one before it, derived
+  from closes already in the payload — the snapshot's last close is exactly what
+  a quote API reports as the previous close, so no live feed is needed. It is
+  labelled *last session* rather than *today* on purpose: the snapshot can be
+  days old and a percentage implies currency more strongly than a chart does.
+  Being computed from the adjusted series, it differs slightly from an
+  unadjusted broker headline on a name that has just gone ex-dividend.
 - **Search** — the magnifier on Ranks, over every ranked name, not just the
   top 50. Exact symbol first, then symbol prefix, then company name, so "MU"
   finds Micron rather than TMUS.
