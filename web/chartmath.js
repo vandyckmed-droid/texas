@@ -11,11 +11,6 @@ var ChartMath = (function () {
      which is the whole series — recent listings simply show fewer bars. */
   var WINDOWS = { '1M': 21, '3M': 63, '6M': 126, '12M': 1e9 };
 
-  /* Every window resamples to this many points so two windows always have the
-     same point count and can be interpolated against each other. Pinned to the
-     chart file's bar count so no window is ever downsampled. */
-  var LINE_POINTS = 253;
-
   function windowBars(key, avail) {
     return Math.min(WINDOWS[key], avail);
   }
@@ -64,16 +59,6 @@ var ChartMath = (function () {
     return closes[closes.length - 1] / prev - 1;
   }
 
-  /** Pads a value range by 6% so the line never touches the frame edge. */
-  function padDomain(lo, hi) {
-    var span = hi - lo;
-    if (span <= 0) {
-      var pad = Math.max(1e-6, Math.abs(hi) * 0.01);
-      return [lo - pad, hi + pad];
-    }
-    return [lo - span * 0.06, hi + span * 0.06];
-  }
-
   function toRgb(c) {
     if (c[0] === '#') {
       return [
@@ -91,15 +76,6 @@ var ChartMath = (function () {
     return 'rgba(' + r[0] + ',' + r[1] + ',' + r[2] + ',' + a + ')';
   }
 
-  function lerpColor(a, b, t) {
-    var A = toRgb(a);
-    var B = toRgb(b);
-    return 'rgb(' +
-      Math.round(A[0] + (B[0] - A[0]) * t) + ',' +
-      Math.round(A[1] + (B[1] - A[1]) * t) + ',' +
-      Math.round(A[2] + (B[2] - A[2]) * t) + ')';
-  }
-
   /* Diverging scale for the correlation matrix: an odd bucket count puts a
      true neutral at the centre, so zero correlation reads as the ground rather
      than as a weak signal in either direction. */
@@ -112,6 +88,18 @@ var ChartMath = (function () {
   }
 
   /** Blend from neutral toward whichever pole the bucket sits on. */
+  /* Internal only: reached through bucketColor, which the correlation screen
+     uses. It was briefly deleted with the morph-animation helpers — the bucket
+     colour tests caught that it is still live code. */
+  function lerpColor(a, b, t) {
+    var A = toRgb(a);
+    var B = toRgb(b);
+    return 'rgb(' +
+      Math.round(A[0] + (B[0] - A[0]) * t) + ',' +
+      Math.round(A[1] + (B[1] - A[1]) * t) + ',' +
+      Math.round(A[2] + (B[2] - A[2]) * t) + ')';
+  }
+
   function bucketColor(bucket, neutral, positive, negative) {
     var b = Math.max(0, Math.min(BUCKETS - 1, bucket));
     var dist = Math.abs(b - NEUTRAL) / NEUTRAL;
@@ -120,16 +108,12 @@ var ChartMath = (function () {
 
   return {
     WINDOWS: WINDOWS,
-    LINE_POINTS: LINE_POINTS,
     BUCKETS: BUCKETS,
     NEUTRAL: NEUTRAL,
     windowBars: windowBars,
-    resampleToN: resampleToN,
-    padDomain: padDomain,
     dayChange: dayChange,
     toRgb: toRgb,
     withAlpha: withAlpha,
-    lerpColor: lerpColor,
     bucketFor: bucketFor,
     bucketColor: bucketColor,
   };

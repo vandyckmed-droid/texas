@@ -82,10 +82,34 @@ const shipped = {
 const payload = JSON.stringify({ meta, rankings: shipped, correlation, calendars, charts }).replace(/<\//g, '<\\/');
 
 const css = readFileSync(join(here, 'app.css'), 'utf8');
+
+/**
+ * TradingView's charting library, inlined from node_modules rather than fetched.
+ *
+ * The standalone IIFE build is the right one here: there is no bundler, and it
+ * defines the `LightweightCharts` global that app.js reads. It is a build-time
+ * devDependency — nothing is downloaded at runtime, so the page keeps making no
+ * network requests.
+ */
+const lwc = readFileSync(
+  join(repo, 'node_modules', 'lightweight-charts', 'dist', 'lightweight-charts.standalone.production.js'),
+  'utf8',
+);
+
+/**
+ * A script block ends at the first `</script`, wherever it appears — including
+ * inside a string literal. The minified library carries SVG markup with `</`
+ * in it, so inlined JS gets the same treatment the data payload already gets.
+ * Only the terminator is escaped: blanket-escaping every `</` would corrupt
+ * code where it is an operator rather than markup.
+ */
+const forScriptTag = (code: string) => code.replace(/<\/(script)/gi, '<\\/$1');
+
 // chartmath first: app.js closes over the global it defines.
-const js = ['chartmath.js', 'concentration.js', 'trend.js', 'app.js']
-  .map((f) => readFileSync(join(here, f), 'utf8'))
-  .join('\n');
+const js = forScriptTag(
+  [lwc, ...['chartmath.js', 'concentration.js', 'trend.js', 'app.js'].map((f) => readFileSync(join(here, f), 'utf8'))]
+    .join('\n'),
+);
 
 const build = () => {
   const icon = renderIcon();

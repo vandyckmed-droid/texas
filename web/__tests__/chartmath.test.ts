@@ -7,42 +7,6 @@ const M = require('../chartmath.js');
 
 // ---------- resampling ----------
 
-test('resampleToN preserves endpoints and length', () => {
-  const out = M.resampleToN([10, 20, 30, 40], 7);
-  assert.equal(out.length, 7);
-  assert.equal(out[0], 10);
-  assert.equal(out[6], 40);
-});
-
-test('resampleToN interpolates linearly at the midpoint', () => {
-  const out = M.resampleToN([0, 100], 3);
-  assert.deepEqual(out, [0, 50, 100]);
-});
-
-test('resampleToN is monotone on monotone input', () => {
-  const rising = Array.from({ length: 40 }, (_, i) => i * i);
-  const out = M.resampleToN(rising, M.LINE_POINTS);
-  for (let i = 1; i < out.length; i++) assert.ok(out[i] >= out[i - 1]);
-});
-
-test('resampleToN handles degenerate inputs without NaN', () => {
-  assert.deepEqual(M.resampleToN([], 3), [0, 0, 0]);
-  assert.deepEqual(M.resampleToN([7], 3), [7, 7, 7]);
-});
-
-test('every window resamples to the same point count, so windows interpolate', () => {
-  // The line morph interpolates point-for-point between two windows; it is
-  // only valid because both sides always have exactly LINE_POINTS points.
-  const series = Array.from({ length: 253 }, (_, i) => 100 + Math.sin(i / 9) * 5);
-  const counts = Object.keys(M.WINDOWS).map((key) => {
-    const n = M.windowBars(key, series.length);
-    return M.resampleToN(series.slice(series.length - n), M.LINE_POINTS).length;
-  });
-  assert.deepEqual(counts, counts.map(() => M.LINE_POINTS));
-});
-
-// ---------- windows ----------
-
 test('windowBars clamps to the bars actually available', () => {
   assert.equal(M.windowBars('1M', 253), 21);
   assert.equal(M.windowBars('3M', 253), 63);
@@ -55,28 +19,9 @@ test('windowBars clamps to the bars actually available', () => {
 
 // ---------- domain padding ----------
 
-test('padDomain widens the range and keeps it ordered', () => {
-  const [lo, hi] = M.padDomain(100, 200);
-  assert.ok(lo < 100);
-  assert.ok(hi > 200);
-  assert.ok(hi > lo);
-});
-
-test('padDomain gives a flat series a non-zero span', () => {
-  const [lo, hi] = M.padDomain(50, 50);
-  assert.ok(hi > lo, 'a flat line must not divide by a zero span');
-});
-
-// ---------- colour ----------
-
 test('toRgb reads hex and rgb() alike', () => {
   assert.deepEqual(M.toRgb('#00D264'), [0, 210, 100]);
   assert.deepEqual(M.toRgb('rgb(0, 210, 100)'), [0, 210, 100]);
-});
-
-test('lerpColor hits both endpoints exactly', () => {
-  assert.equal(M.lerpColor('#000000', '#FFFFFF', 0), 'rgb(0,0,0)');
-  assert.equal(M.lerpColor('#000000', '#FFFFFF', 1), 'rgb(255,255,255)');
 });
 
 test('withAlpha keeps the channels and applies the alpha', () => {
