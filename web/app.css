@@ -79,6 +79,13 @@ button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
 .rangebar{position:relative; width:72px; height:7px; display:flex; align-items:center}
 .rangebar .track{width:100%; height:3px; border-radius:1.5px; background:var(--fill)}
 .rangebar .dot{position:absolute; width:7px; height:7px; border-radius:50%; background:var(--text-2)}
+.channel{position:relative; width:72px; height:7px; display:flex; align-items:center}
+.channel .track{width:100%; height:3px; border-radius:1.5px; background:var(--fill)}
+.channel .mid{position:absolute; left:35.5px; top:0; width:1px; height:7px; background:var(--text-3); opacity:.6}
+.channel .dot{position:absolute; width:7px; height:7px; border-radius:50%; background:var(--text-3)}
+.channel .dot.pos{background:var(--pos)}
+.channel .dot.neg{background:var(--neg)}
+.channel .dot.weak{background:var(--text-3); opacity:.55}
 .trend{position:relative; width:72px; height:26px}
 .trend .axis{position:absolute; left:35.5px; top:6px; width:1px; height:14px; background:var(--text-3); opacity:.5}
 .trend i.fill{position:absolute; border-radius:1px}

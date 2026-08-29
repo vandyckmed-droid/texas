@@ -271,6 +271,7 @@
     row.appendChild(nc);
     var viz = h('span', 'viz');
     viz.appendChild(S.rowViz === 'impact' ? deltaChip(s.symbol)
+      : S.rowViz === 'channel' ? channelBar(s.symbol)
       : S.rowViz === 'day' ? dayChip(s.symbol)
       : S.rowViz === 'trend' ? trendBar(s)
       : S.rowViz === 'range' ? rangeBar(s) : rollingBars(s));
@@ -462,6 +463,58 @@
     return d > 0 ? 'pos' : 'neg';
   }
 
+  /* --- regression channel ------------------------------------------------
+     Cached per symbol: the ranks screen asks for one per row, and the ticker
+     screen asks again for the chart overlay. 252 log/multiply-adds each. */
+  var channelCache = {};
+  function channelOf(sym) {
+    if (!(sym in channelCache)) {
+      var ch = getChart(sym);
+      channelCache[sym] = ch ? Trend.channel(ch.c) : null;
+    }
+    return channelCache[sym];
+  }
+
+  var CHANNEL_CLAMP = 3; // sigma at the ends of the track
+
+  /**
+   * Position inside the fitted channel, on the same track-and-dot language as
+   * the 52-week range bar: centre tick is the trend line, the dot is where the
+   * last close sits, ends are ±3σ.
+   *
+   * ±3 rather than ±2 because the empirical spread of z across the universe is
+   * 1.51σ, so a ±2 track would peg a fifth of the list at its ends.
+   *
+   * A weak fit renders muted rather than green or red. A channel fitted to
+   * something that is not a trend must not look like a signal — a fifth of the
+   * universe has R² below 0.20.
+   */
+  function channelBar(sym) {
+    var c = channelOf(sym);
+    var w = h('div', 'channel');
+    w.appendChild(h('i', 'track'));
+    w.appendChild(h('i', 'mid'));
+    if (!c || c.z === null) {
+      w.title = sym + ': no fitted channel';
+      return w;
+    }
+    var weak = Trend.isWeak(c);
+    var t = Math.max(-1, Math.min(1, c.z / CHANNEL_CLAMP));
+    var dot = h('i', 'dot' + (weak ? ' weak' : c.z >= 0 ? ' pos' : ' neg'));
+    dot.style.left = (33 + t * 33).toFixed(1) + 'px';
+    w.appendChild(dot);
+    w.title = sym + ' ' + sigText(c) + ' from its 252-day trend · fit R² ' +
+      (c.r2 === null ? '—' : c.r2.toFixed(2)) +
+      (weak ? ' (too weak to read)' : '');
+    return w;
+  }
+
+  /** One formatting of the score, so row and ticker cannot drift apart. */
+  function sigText(c) {
+    if (!c || c.z === null) return '—';
+    return (c.z >= 0 ? '+' : '−') + Math.abs(c.z).toFixed(2) + 'σ';
+  }
+
   function dayChip(sym) {
     var ch = getChart(sym);
     var el = h('div', 'delta num', dayText(ch));
@@ -601,6 +654,7 @@
     var vizCard = h('div', 'setcard');
     [['range', '52-week range', 'Low, high, and latest price'],
      ['rolling', 'Rolling blended score', 'Momentum score through time'],
+     ['channel', 'Trend channel', 'Where the price sits in its 252-day log regression'],
      ['day', 'Last session move', 'Change over the snapshot’s final trading day'],
      ['trend', 'Accelerating or fading', '6–1 momentum against 12–1'],
      ['impact', 'Watchlist impact', 'What starring or dropping it does to your score']].forEach(function (opt) {
@@ -613,6 +667,7 @@
       var prev = h('span', 'prev');
       var sample = top50(S.mode)[0];
       prev.appendChild(opt[0] === 'impact' ? deltaChip(sample.symbol)
+        : opt[0] === 'channel' ? channelBar(sample.symbol)
         : opt[0] === 'day' ? dayChip(sample.symbol)
         : opt[0] === 'trend' ? trendBar(sample)
         : opt[0] === 'range' ? rangeBar(sample) : rollingBars(sample));
@@ -719,6 +774,13 @@
      ['12–1 momentum', pct(s.m12), ''],
      ['6–1 momentum', pct(s.m6), ''],
      ['Last session', dayText(chart), dayTone(chart)],
+     ['Trend channel', sigText(channelOf(s.symbol)),
+       (function () { var c = channelOf(s.symbol);
+         return !c || c.z === null || Trend.isWeak(c) ? '' : (c.z >= 0 ? 'pos' : 'neg'); })()],
+     ['Trend fit (R²)', (function () { var c = channelOf(s.symbol);
+        return !c || c.r2 === null ? '—' : c.r2.toFixed(2); })(), ''],
+     ['Trend slope', (function () { var c = channelOf(s.symbol);
+        return !c ? '—' : pct(c.slopeAnnualised) + ' log'; })(), ''],
      ['6–1 vs 12–1', pct(s.m6 - s.m12), s.m6 >= s.m12 ? 'pos' : 'neg'],
      ['Volatility (126d)', (s.vol * 100).toFixed(1) + '%', ''],
      ['52-week range', money(s.wk52Low) + ' – ' + money(s.wk52High), ''],
@@ -788,6 +850,7 @@
       var wk = built[tickerState.win];
       var vmin = Math.min.apply(null, wk.slice), vmax = Math.max.apply(null, wk.slice);
       drawAxis(cur.lo, cur.hi, vmin, vmax);
+      drawChannel(wk.n);
       ctx.beginPath();
       for (var k = 0; k < LINE_POINTS; k++) {
         var x = (k / (LINE_POINTS - 1)) * plotW, y = yFor(cur.pts[k], cur.lo, cur.hi);
@@ -814,6 +877,48 @@
       }
       if (animFrom) raf = requestAnimationFrame(draw);
     }
+    /**
+     * The 252-day regression channel, under the price line.
+     *
+     * The fit lives in log space and the chart plots price, so every band is
+     * exp()'d back before mapping. Bands routinely fall outside the window's
+     * y-domain, so the whole thing is clipped to the plot rect — otherwise a
+     * band would paint across the axis labels in the right-hand gutter.
+     *
+     * Not drawn when the fit is weak: a channel over something that is not a
+     * trend would read as structure that is not there.
+     */
+    function drawChannel(nBars) {
+      var ch = channelOf(s.symbol);
+      if (!ch || Trend.isWeak(ch)) return;
+      var len = chart.c.length;
+      // Bar k of the window is series index len-nBars+k, which is index
+      // (252 - nBars + k) within the regression window.
+      var offset = ch.n - nBars;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, PAD, plotW, HEIGHT - 2 * PAD);
+      ctx.clip();
+      [[0, 0.9, 4], [2, 0.55, 0], [-2, 0.55, 0]].forEach(function (spec) {
+        var k = spec[0], alpha = spec[1], dash = spec[2];
+        ctx.beginPath();
+        var started = false;
+        for (var i = 0; i < nBars; i++) {
+          var ri = offset + i;
+          if (ri < 0 || ri >= ch.n) continue;
+          var x = (i / Math.max(1, nBars - 1)) * plotW;
+          var y = yFor(Math.exp(Trend.fittedAt(ch, ri, k)), cur.lo, cur.hi);
+          if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+        }
+        ctx.setLineDash(dash ? [dash, dash] : []);
+        ctx.strokeStyle = withAlpha(css('--text-3'), alpha * 0.7);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      });
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
     function crosshair(cx, cy, color) {
       ctx.strokeStyle = css('--cross'); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(cx, PAD); ctx.lineTo(cx, HEIGHT - PAD); ctx.stroke();

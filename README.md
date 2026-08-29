@@ -103,13 +103,43 @@ blended score is z-scored across the universe and squashed through
 `2·tanh(z/2)`, which bounds it to ±2 without changing any ordering. It never
 feeds a ranking.
 
+The **trend channel** is the one statistic computed in the browser rather than
+the pipeline (`web/trend.js`, cached per symbol): ordinary least squares of
+`ln(adjusted close)` against time over the last 252 bars, giving a fitted line,
+a residual standard deviation `σ` on n−2 degrees of freedom, and the score
+
+    z = last residual / σ
+
+— how far the latest close sits above or below its own trend. Every other
+figure here measures how *strong* a trend is; this measures where the price
+currently sits *inside* it. The two are close to unrelated: `z` correlates
+−0.23 with blended momentum and +0.00 with volatility, and a name can rank
+top-20 on momentum while trading three σ below its own line.
+
+Two caveats the display exists to handle:
+
+- The fitted slope is reported as `b × 252` — an annualised **log** return, to
+  match how blended/12–1/6–1 are already rendered, *not* a simple return
+  (AMAT's +124.2% log is +246% simple). It is a supporting figure only: it
+  correlates +0.86 with blended momentum, so it is a second estimate of the
+  same trend rather than new information.
+- `R² < 0.20` means there is no trend to sit inside — that is 119 of the 500
+  names — so the app mutes the channel there instead of colouring it, and
+  omits the bands from the chart. A channel fitted to noise otherwise reads
+  exactly like a signal. Fewer than 252 bars yields no channel at all rather
+  than a shorter fit relabelled as a 252-day one.
+
 ## Screens
 
 - **Ranks** — top 50 by blended momentum or its vol-adjusted equivalent, with
   a toggle at the foot to show all 500. The row visualisation is chosen in
   Settings: a 52-week range bar, the rolling blended score, accelerating-or-
   fading (6–1 momentum against 12–1 — red at the top of a momentum list means
-  the move is old), the last session's move, or watchlist impact.
+  the move is old), where the price sits in its 252-day regression channel, the
+  last session's move, or watchlist impact.
+
+  The channel bar spans ±3σ rather than ±2σ: the spread of `z` across the
+  universe is 1.51, not 1.0, so ±2 would peg a fifth of the list at the ends.
 
   The last-session move is the final close against the one before it, derived
   from closes already in the payload — the snapshot's last close is exactly what
@@ -131,7 +161,10 @@ feeds a ranking.
   existing line into the new horizon rather than replacing it: every window
   resamples to the same 253 points, so the two shapes interpolate. Drag for a
   crosshair. Chevrons walk the list you arrived from without going back. The
-  stat grid includes 6–1 vs 12–1, the momentum-deceleration spread.
+  fitted trend line and its ±2σ bands are drawn beneath the price in the muted
+  separator tone, clipped to the plot, so they read as background structure —
+  and are suppressed on a weak fit. The stat grid includes 6–1 vs 12–1, the
+  momentum-deceleration spread, and the channel position, fit and slope.
 
   Candles were cut. They could not morph — a window change alters the bar
   count, leaving nothing to interpolate — and every figure here comes from
