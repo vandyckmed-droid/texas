@@ -273,6 +273,7 @@
     var viz = h('span', 'viz');
     viz.appendChild(S.rowViz === 'impact' ? deltaChip(s.symbol)
       : S.rowViz === 'channel' ? channelBar(s.symbol)
+      : S.rowViz === 'accel' ? accelBar(s.symbol)
       : S.rowViz === 'day' ? dayChip(s.symbol)
       : S.rowViz === 'trend' ? trendBar(s)
       : S.rowViz === 'range' ? rangeBar(s) : rollingBars(s));
@@ -355,7 +356,7 @@
     // The channel is the one row viz whose scale is not self-evident: a dot on
     // a track says nothing about sigma. The others encode a percentage or a
     // price range that the number beside them already names.
-    if (S.rowViz === 'channel' && !legendSeen) sc.appendChild(channelLegend());
+    if (LEGENDS[S.rowViz] && !legendSeen[S.rowViz]) sc.appendChild(trackLegend(S.rowViz));
     sc.appendChild(buyChip(buyCount));
 
     // Not an early return: widening to all 500 is the natural next move when
@@ -568,14 +569,20 @@
    * CSS rules the rows use — the legend cannot drift out of alignment with the
    * track it annotates without the rows moving too.
    */
-  var legendSeen = false;
+  var legendSeen = {};
   var LEGEND_HOLD = 4000;
 
-  function channelLegend() {
-    legendSeen = true;
+  /** Which row visualisations need an axis explained, and what it says. */
+  var LEGENDS = {
+    channel: 'Distance from 252-day trend',
+    accel: 'Trend change · 42d vs 126d',
+  };
+
+  function trackLegend(viz) {
+    legendSeen[viz] = true;
     var el = h('div', 'chankey');
     el.appendChild(h('span', 'rank'));
-    el.appendChild(h('span', 'namecol', 'Distance from 252-day trend'));
+    el.appendChild(h('span', 'namecol', LEGENDS[viz]));
     var scale = h('div', 'viz');
     var inner = h('div', 'scale');
     // Ends align to the track's ends; centring them on channelX(±3) would
@@ -592,6 +599,47 @@
     // Collapsing the height rather than hiding it keeps the list from jumping.
     setTimeout(function () { el.className = 'chankey gone'; }, LEGEND_HOLD);
     return el;
+  }
+
+  var accelCache = {};
+  function accelOf(sym) {
+    if (!(sym in accelCache)) {
+      var ch = getChart(sym);
+      accelCache[sym] = ch ? Trend.acceleration(ch.c, channelOf(sym)) : null;
+    }
+    return accelCache[sym];
+  }
+
+  /** One formatting of the acceleration score, shared by the row and the ticker. */
+  function accelText(a) {
+    if (a === null || a === undefined) return '—';
+    return (a >= 0 ? '+' : '−') + Math.abs(a).toFixed(2) + 'σ';
+  }
+
+  /**
+   * Whether the trend itself is turning, on the same track the channel uses.
+   *
+   * Green sits on the right here and on the left for the channel. That is not
+   * an inconsistency to fix: in both, green is the favourable reading, and the
+   * two are never on screen at once — the row visualisation is a single choice.
+   */
+  function accelBar(sym) {
+    var a = accelOf(sym);
+    var w = h('div', 'channel accel');
+    w.appendChild(h('i', 'track'));
+    // Centre tick only. The channel's ±2σ marks are real thresholds; on this
+    // scale nothing sits at ±2, so flanking ticks would invent a boundary.
+    w.appendChild(channelTick('mid', channelX(0)));
+    if (a === null) {
+      w.title = sym + ': no acceleration score';
+      return w;
+    }
+    var dot = h('i', 'dot' + (Trend.accelZone(a) ? ' ' + Trend.accelZone(a) : ''));
+    dot.style.left = (channelX(a) - CHANNEL_DOT / 2).toFixed(2) + 'px';
+    w.appendChild(dot);
+    var ph = Trend.phase(channelOf(sym), a);
+    w.title = sym + ' trend change ' + accelText(a) + (ph ? ' — ' + ph : '');
+    return w;
   }
 
   /** Names sitting in a readable pullback — the same predicate as the green dot. */
@@ -761,6 +809,7 @@
     [['range', '52-week range', 'Low, high, and latest price'],
      ['rolling', 'Rolling blended score', 'Momentum score through time'],
      ['channel', 'Trend channel', 'Where the price sits in its 252-day log regression'],
+     ['accel', 'Trend acceleration', 'Whether the trend itself is turning — 42-day slope against 126-day'],
      ['day', 'Last session move', 'Change over the snapshot’s final trading day'],
      ['trend', 'Accelerating or fading', '6–1 momentum against 12–1'],
      ['impact', 'Watchlist impact', 'What starring or dropping it does to your score']].forEach(function (opt) {
@@ -774,6 +823,7 @@
       var sample = top50(S.mode)[0];
       prev.appendChild(opt[0] === 'impact' ? deltaChip(sample.symbol)
         : opt[0] === 'channel' ? channelBar(sample.symbol)
+        : opt[0] === 'accel' ? accelBar(sample.symbol)
         : opt[0] === 'day' ? dayChip(sample.symbol)
         : opt[0] === 'trend' ? trendBar(sample)
         : opt[0] === 'range' ? rangeBar(sample) : rollingBars(sample));
@@ -888,6 +938,10 @@
         return !c || c.r2 === null ? '—' : c.r2.toFixed(2); })(), ''],
      ['Trend slope', (function () { var c = channelOf(s.symbol);
         return !c ? '—' : pct(c.slopeAnnualised) + ' log'; })(), ''],
+     ['Trend acceleration', accelText(accelOf(s.symbol)),
+       (function () { var z = Trend.accelZone(accelOf(s.symbol));
+         return z === 'improving' ? 'pos' : z === 'worsening' ? 'neg' : ''; })()],
+     ['Trend phase', Trend.phase(channelOf(s.symbol), accelOf(s.symbol)) || '—', ''],
      ['6–1 vs 12–1', pct(s.m6 - s.m12), s.m6 >= s.m12 ? 'pos' : 'neg'],
      ['Volatility (126d)', (s.vol * 100).toFixed(1) + '%', ''],
      ['52-week range', money(s.wk52Low) + ' – ' + money(s.wk52High), ''],
