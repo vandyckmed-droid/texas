@@ -233,51 +233,29 @@
     w.appendChild(dot);
     return w;
   }
-  /**
-   * 6-1 momentum against 12-1: a bar left of centre means the recent half is
-   * weaker than the year, so the move is fading.
-   *
-   * Worth its own view because blending hides it. A name can sit near the top
-   * of the ranking on a huge 12-1 while its last six months are flat or
-   * negative -- the blend averages the two and reports a strong score for a
-   * trend that has already turned.
-   *
-   * Scaled by tanh rather than clipped: spreads run past 200 points either
-   * way, and a linear scale would peg most of the list at the ends. This is
-   * presentation only and changes no ranking.
-   */
-  var TREND_SCALE = 1.0; // spread, in annualised return, that reaches ~76% width
-  function trendBar(s) {
-    var w = h('div', 'trend');
-    w.appendChild(h('i', 'axis'));
-    var spread = s.m6 - s.m12;
-    var t = Math.tanh(spread / TREND_SCALE);
-    var half = 35;
-    var len = Math.max(1.5, Math.abs(t) * half);
-    var bar = h('i', 'fill');
-    bar.style.cssText = 'height:6px;top:10px;width:' + len.toFixed(1) + 'px;' +
-      (t >= 0 ? 'left:36px;' : 'left:' + (36 - len).toFixed(1) + 'px;') +
-      'background:var(--' + (t >= 0 ? 'pos' : 'neg') + ')';
-    w.appendChild(bar);
-    w.title = '6–1 ' + pct(s.m6) + ' vs 12–1 ' + pct(s.m12) +
-      ' — ' + (spread >= 0 ? 'accelerating' : 'fading');
-    return w;
+  /* The row visualisations, in the order Settings lists them. One list drives
+     the rows, the settings screen and the stored-value check, so an option
+     cannot survive in one place after being removed from the others. */
+  var ROW_VIZ = [
+    ['range', '52-week range', 'Low, high, and latest price'],
+    ['channel', 'Trend channel', 'Where the price sits in its 252-day log regression'],
+    ['day', 'Last session move', 'Change over the snapshot\u2019s final trading day'],
+    ['impact', 'Watchlist impact', 'What starring or dropping it does to your score'],
+  ];
+  function vizFor(key, s) {
+    return key === 'impact' ? deltaChip(s.symbol)
+      : key === 'channel' ? channelBar(s.symbol)
+      : key === 'day' ? dayChip(s.symbol)
+      : rangeBar(s);
+  }
+  /* A device can still hold a choice that no longer exists — three
+     visualisations were removed — which would leave Settings with nothing
+     selected while the rows silently fell back. Coerce it once, on load. */
+  if (!ROW_VIZ.some(function (o) { return o[0] === S.rowViz; })) {
+    S.rowViz = 'range';
+    saveLS('texas.web.rowViz', S.rowViz);
   }
 
-  function rollingBars(s) {
-    var w = h('div', 'rolling');
-    w.appendChild(h('i', 'base'));
-    var n = s.rolling.length, slot = 72 / n, bw = Math.max(1.5, slot - 1);
-    s.rolling.forEach(function (v, i) {
-      if (v === null) return;
-      var bar = h('i');
-      var hh = Math.max(1.5, (Math.abs(v) / 2) * 13);
-      bar.style.cssText = 'left:' + (i * slot).toFixed(1) + 'px;width:' + bw.toFixed(1) + 'px;height:' + hh.toFixed(1) +
-        'px;top:' + (v >= 0 ? 13 - hh : 13).toFixed(1) + 'px;background:var(--' + (v >= 0 ? 'pos' : 'neg') + ')';
-      w.appendChild(bar);
-    });
-    return w;
-  }
   function stockRow(s, rank, list, onStar) {
     var row = h('button', 'row');
     row.appendChild(h('span', 'rank num', String(rank)));
@@ -286,12 +264,7 @@
     nc.appendChild(h('div', 'nm', s.name));
     row.appendChild(nc);
     var viz = h('span', 'viz');
-    viz.appendChild(S.rowViz === 'impact' ? deltaChip(s.symbol)
-      : S.rowViz === 'channel' ? channelBar(s.symbol)
-      : S.rowViz === 'accel' ? accelBar(s.symbol)
-      : S.rowViz === 'day' ? dayChip(s.symbol)
-      : S.rowViz === 'trend' ? trendBar(s)
-      : S.rowViz === 'range' ? rangeBar(s) : rollingBars(s));
+    viz.appendChild(vizFor(S.rowViz, s));
     row.appendChild(viz);
     var pc = h('span', 'pricecol');
     pc.appendChild(h('div', 'px num', money(s.price)));
@@ -590,7 +563,6 @@
   /** Which row visualisations need an axis explained, and what it says. */
   var LEGENDS = {
     channel: 'Distance from 252-day trend',
-    accel: 'Trend change · 42d vs 126d',
   };
 
   function trackLegend(viz) {
@@ -629,32 +601,6 @@
   function accelText(a) {
     if (a === null || a === undefined) return '—';
     return (a >= 0 ? '+' : '−') + Math.abs(a).toFixed(2) + 'σ';
-  }
-
-  /**
-   * Whether the trend itself is turning, on the same track the channel uses.
-   *
-   * Green sits on the right here and on the left for the channel. That is not
-   * an inconsistency to fix: in both, green is the favourable reading, and the
-   * two are never on screen at once — the row visualisation is a single choice.
-   */
-  function accelBar(sym) {
-    var a = accelOf(sym);
-    var w = h('div', 'channel accel');
-    w.appendChild(h('i', 'track'));
-    // Centre tick only. The channel's ±2σ marks are real thresholds; on this
-    // scale nothing sits at ±2, so flanking ticks would invent a boundary.
-    w.appendChild(channelTick('mid', channelX(0)));
-    if (a === null) {
-      w.title = sym + ': no acceleration score';
-      return w;
-    }
-    var dot = h('i', 'dot' + (Trend.accelZone(a) ? ' ' + Trend.accelZone(a) : ''));
-    dot.style.left = (channelX(a) - CHANNEL_DOT / 2).toFixed(2) + 'px';
-    w.appendChild(dot);
-    var ph = Trend.phase(channelOf(sym), a);
-    w.title = sym + ' trend change ' + accelText(a) + (ph ? ' — ' + ph : '');
-    return w;
   }
 
   /** Names sitting in a readable pullback — the same predicate as the green dot. */
@@ -821,13 +767,7 @@
     var sc = h('div', 'screen');
     sc.appendChild(h('div', 'sect', 'ROW VISUALIZATION'));
     var vizCard = h('div', 'setcard');
-    [['range', '52-week range', 'Low, high, and latest price'],
-     ['rolling', 'Rolling blended score', 'Momentum score through time'],
-     ['channel', 'Trend channel', 'Where the price sits in its 252-day log regression'],
-     ['accel', 'Trend acceleration', 'Whether the trend itself is turning — 42-day slope against 126-day'],
-     ['day', 'Last session move', 'Change over the snapshot’s final trading day'],
-     ['trend', 'Accelerating or fading', '6–1 momentum against 12–1'],
-     ['impact', 'Watchlist impact', 'What starring or dropping it does to your score']].forEach(function (opt) {
+    ROW_VIZ.forEach(function (opt) {
       var on = S.rowViz === opt[0];
       var row = h('button', 'setrow' + (on ? ' on' : ''));
       var sl = h('span', 'sl');
@@ -836,12 +776,7 @@
       row.appendChild(sl);
       var prev = h('span', 'prev');
       var sample = top50(S.mode)[0];
-      prev.appendChild(opt[0] === 'impact' ? deltaChip(sample.symbol)
-        : opt[0] === 'channel' ? channelBar(sample.symbol)
-        : opt[0] === 'accel' ? accelBar(sample.symbol)
-        : opt[0] === 'day' ? dayChip(sample.symbol)
-        : opt[0] === 'trend' ? trendBar(sample)
-        : opt[0] === 'range' ? rangeBar(sample) : rollingBars(sample));
+      prev.appendChild(vizFor(opt[0], sample));
       row.appendChild(prev);
       row.appendChild(h('span', 'radio', on ? '◉' : '○'));
       row.onclick = function () { haptic(); S.rowViz = opt[0]; saveLS('texas.web.rowViz', opt[0]); render(); };

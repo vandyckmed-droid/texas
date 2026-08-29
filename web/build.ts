@@ -68,14 +68,19 @@ for (const stock of [...rankings.stocks].sort((a, b) => (a.fileKey < b.fileKey ?
 }
 
 /**
- * Prior ranks stay in data/ but are dropped here: nothing in the app reads
- * them since the movement carets were removed, and shipping ~500 unread pairs
- * is dead payload. scripts/write.ts still records them, so an entrants/exits
- * view could use them later without another refresh cycle to seed history.
+ * Fields that stay in data/ but are dropped here, because nothing in the app
+ * reads them and shipping them is dead payload:
+ *
+ *   prevRank*  since the rank-movement carets were removed
+ *   rolling    since the rolling-score row visualisation was removed — 82 KB
+ *              of weekly series across the universe
+ *
+ * The refresh still records all of them, so a view that wants them later needs
+ * no extra refresh cycle to seed its history.
  */
 const shipped = {
   ...rankings,
-  stocks: rankings.stocks.map(({ prevRankBlended, prevRankVolAdj, ...keep }) => keep),
+  stocks: rankings.stocks.map(({ prevRankBlended, prevRankVolAdj, rolling, ...keep }) => keep),
 };
 
 /** `</` inside a string literal would close the enclosing <script> early. */

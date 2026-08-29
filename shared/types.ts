@@ -5,7 +5,7 @@
  */
 
 export type RankMode = 'blended' | 'volAdj';
-export type RowViz = 'range' | 'rolling' | 'trend' | 'channel' | 'accel' | 'day' | 'impact';
+export type RowViz = 'range' | 'channel' | 'day' | 'impact';
 
 export const GICS_SECTORS = [
   'Information Technology',
