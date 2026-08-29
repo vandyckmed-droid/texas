@@ -339,6 +339,10 @@
       function (v) { S.mode = v; saveLS('texas.web.mode', v); render(); }
     ));
     sc.appendChild(sw);
+    // The channel is the one row viz whose scale is not self-evident: a dot on
+    // a track says nothing about sigma. The others encode a percentage or a
+    // price range that the number beside them already names.
+    if (S.rowViz === 'channel') sc.appendChild(channelLegend());
     var ranked = D.rankings.stocks.slice().sort(function (a, b) {
       return rankOf(a, S.mode) - rankOf(b, S.mode);
     });
@@ -475,38 +479,88 @@
     return channelCache[sym];
   }
 
-  var CHANNEL_CLAMP = 3; // sigma at the ends of the track
+  /* Track geometry lives here alone. The ticks, the dot and the legend labels
+     are all placed by channelX(), so the scale a row draws and the scale the
+     legend annotates cannot drift apart. */
+  var CHANNEL_W = 72;                                // matches .channel in app.css
+  var CHANNEL_DOT = 7;
+  var CHANNEL_CLAMP = 3;                             // sigma at the ends of the track
+  var CHANNEL_MID = CHANNEL_W / 2;
+  var CHANNEL_HALF = (CHANNEL_W - CHANNEL_DOT) / 2;  // keeps the dot inside the track
+
+  /** Centre of the marker for score z, in px from the track's left edge. */
+  function channelX(z) {
+    var t = Math.max(-1, Math.min(1, z / CHANNEL_CLAMP));
+    return CHANNEL_MID + t * CHANNEL_HALF;
+  }
+
+  /** An absolutely positioned tick centred on x. */
+  function channelTick(cls, x) {
+    var i = h('i', cls);
+    i.style.left = (x - 0.5).toFixed(2) + 'px';
+    return i;
+  }
 
   /**
    * Position inside the fitted channel, on the same track-and-dot language as
-   * the 52-week range bar: centre tick is the trend line, the dot is where the
-   * last close sits, ends are ±3σ.
+   * the 52-week range bar: centre tick is the trend line, the marker is where
+   * the last close sits, ends are ±3σ.
    *
    * ±3 rather than ±2 because the empirical spread of z across the universe is
    * 1.51σ, so a ±2 track would peg a fifth of the list at its ends.
    *
-   * A weak fit renders muted rather than green or red. A channel fitted to
-   * something that is not a trend must not look like a signal — a fifth of the
-   * universe has R² below 0.20.
+   * Nothing here is coloured. Green/red would read as good/bad, and on this
+   * axis that reading is backwards: the name sitting 3σ *below* its own uptrend
+   * is the pullback, the one 3σ above is the stretched one. So position states
+   * direction, weight states extremeness, and fill states whether the channel
+   * can be trusted at all — see Trend.marker for that precedence.
    */
   function channelBar(sym) {
     var c = channelOf(sym);
     var w = h('div', 'channel');
     w.appendChild(h('i', 'track'));
-    w.appendChild(h('i', 'mid'));
+    w.appendChild(channelTick('mark', channelX(-Trend.FAR)));
+    w.appendChild(channelTick('mark', channelX(Trend.FAR)));
+    w.appendChild(channelTick('mid', channelX(0)));
     if (!c || c.z === null) {
       w.title = sym + ': no fitted channel';
       return w;
     }
-    var weak = Trend.isWeak(c);
-    var t = Math.max(-1, Math.min(1, c.z / CHANNEL_CLAMP));
-    var dot = h('i', 'dot' + (weak ? ' weak' : c.z >= 0 ? ' pos' : ' neg'));
-    dot.style.left = (33 + t * 33).toFixed(1) + 'px';
+    var mark = Trend.marker(c);
+    var dot = h('i', 'dot ' + mark);
+    dot.style.left = (channelX(c.z) - CHANNEL_DOT / 2).toFixed(2) + 'px';
     w.appendChild(dot);
     w.title = sym + ' ' + sigText(c) + ' from its 252-day trend · fit R² ' +
       (c.r2 === null ? '—' : c.r2.toFixed(2)) +
-      (weak ? ' (too weak to read)' : '');
+      (mark === 'weak' ? ' (too weak to read)' : '');
     return w;
+  }
+
+  /**
+   * The axis label for the channel column, shown once above the list.
+   *
+   * Built from .row's own classes so every column width comes from the same
+   * CSS rules the rows use — the legend cannot drift out of alignment with the
+   * track it annotates without the rows moving too.
+   */
+  function channelLegend() {
+    var el = h('div', 'chankey');
+    el.appendChild(h('span', 'rank'));
+    el.appendChild(h('span', 'namecol', 'Distance from 252-day trend'));
+    var scale = h('div', 'viz');
+    var inner = h('div', 'scale');
+    // Ends align to the track's ends; centring them on channelX(±3) would
+    // overhang. Only the zero is placed by the shared geometry.
+    inner.appendChild(h('i', 'a', '−' + CHANNEL_CLAMP + 'σ'));
+    var zero = h('i', 'b', '0');
+    zero.style.left = channelX(0).toFixed(2) + 'px';
+    inner.appendChild(zero);
+    inner.appendChild(h('i', 'c', '+' + CHANNEL_CLAMP + 'σ'));
+    scale.appendChild(inner);
+    el.appendChild(scale);
+    el.appendChild(h('span', 'pricecol'));
+    el.appendChild(h('span', 'star'));
+    return el;
   }
 
   /** One formatting of the score, so row and ticker cannot drift apart. */
@@ -774,9 +828,9 @@
      ['12–1 momentum', pct(s.m12), ''],
      ['6–1 momentum', pct(s.m6), ''],
      ['Last session', dayText(chart), dayTone(chart)],
-     ['Trend channel', sigText(channelOf(s.symbol)),
-       (function () { var c = channelOf(s.symbol);
-         return !c || c.z === null || Trend.isWeak(c) ? '' : (c.z >= 0 ? 'pos' : 'neg'); })()],
+     // Untoned on purpose: below-trend is not "bad". Colouring it would have
+     // the ticker contradict the row, which states direction by position only.
+     ['Trend channel', sigText(channelOf(s.symbol)), ''],
      ['Trend fit (R²)', (function () { var c = channelOf(s.symbol);
         return !c || c.r2 === null ? '—' : c.r2.toFixed(2); })(), ''],
      ['Trend slope', (function () { var c = channelOf(s.symbol);

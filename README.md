@@ -124,10 +124,14 @@ Two caveats the display exists to handle:
   correlates +0.86 with blended momentum, so it is a second estimate of the
   same trend rather than new information.
 - `R² < 0.20` means there is no trend to sit inside — that is 119 of the 500
-  names — so the app mutes the channel there instead of colouring it, and
-  omits the bands from the chart. A channel fitted to noise otherwise reads
-  exactly like a signal. Fewer than 252 bars yields no channel at all rather
-  than a shorter fit relabelled as a 252-day one.
+  names — so the app renders those quietly and omits the bands from the chart.
+  A channel fitted to noise otherwise reads exactly like a signal. Fewer than
+  252 bars yields no channel at all rather than a shorter fit relabelled as a
+  252-day one.
+
+  `Trend.marker()` is where this precedence lives, and it is strict rather than
+  a blend: `weak` wins over `far` whatever the z. The marker split over the
+  current snapshot is 293 near · 88 far · 119 weak.
 
 ## Screens
 
@@ -140,6 +144,18 @@ Two caveats the display exists to handle:
 
   The channel bar spans ±3σ rather than ±2σ: the spread of `z` across the
   universe is 1.51, not 1.0, so ±2 would peg a fifth of the list at the ends.
+  Ticks mark the trend line and ±2σ, and a one-line legend above the list names
+  the axis, since a dot on a track says nothing about sigma on its own.
+
+  Nothing in it is coloured. Green and red mean good and bad everywhere else in
+  this app, and on this axis that reading is backwards — the name 3σ *below* its
+  own uptrend is the pullback, the one 3σ above is the stretched one. So
+  position states direction, marker weight states extremeness, and fill states
+  whether the channel can be trusted: **a weak fit stays quiet however extreme
+  its z**, because that z is not interpretable. 18 of the 500 names are both
+  R² < 0.20 and |z| ≥ 2 — V sits +2.24σ out on an R² of 0.02, NWS/NWSA on 0.00 —
+  and ranked by magnitude alone those would be the loudest marks in the list
+  while being the least meaningful. They render as hollow rings instead.
 
   The last-session move is the final close against the one before it, derived
   from closes already in the payload — the snapshot's last close is exactly what
