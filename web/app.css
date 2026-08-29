@@ -79,23 +79,25 @@ button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
 .rangebar{position:relative; width:72px; height:7px; display:flex; align-items:center}
 .rangebar .track{width:100%; height:3px; border-radius:1.5px; background:var(--fill)}
 .rangebar .dot{position:absolute; width:7px; height:7px; border-radius:50%; background:var(--text-2)}
-/* channel: position = direction, weight = extremeness, fill = trustworthy.
-   No hue at all — green/red would read as good/bad, and on this axis that is
-   backwards (below its own uptrend is the pullback, above is the stretched). */
+/* channel: position on the track, hue from Trend.zone — green below the trend
+   line (a pullback), red above it (extended), neutral in the middle and neutral
+   past the ±2σ ticks, where the deviation is too large to read as either. */
 .channel{position:relative; width:72px; height:14px; display:flex; align-items:center}
 .channel .track{width:100%; height:3px; border-radius:1.5px; background:var(--fill)}
 .channel .mid{position:absolute; top:1.5px; width:1px; height:11px; background:var(--text-2)}
 .channel .mark{position:absolute; bottom:0; width:1px; height:5px; background:var(--text-3); opacity:.45}
-.channel .dot{position:absolute; border-radius:50%; background:var(--text-2)}
-.channel .dot.near{width:6px; height:6px; margin-left:.5px; top:4px; opacity:.75}
-.channel .dot.far{width:8px; height:8px; margin-left:-.5px; top:3px; opacity:1}
-/* Hollow, so an untrustworthy channel cannot be mistaken for a quiet one at
-   any size — this wins over magnitude however extreme the z. */
-.channel .dot.weak{width:7px; height:7px; top:3.5px; background:none;
-  border:1.5px solid var(--text-3); opacity:.7}
+.channel .dot{position:absolute; top:3.5px; width:7px; height:7px; border-radius:50%;
+  background:var(--text-2); opacity:.78}
+.channel .dot.buy{background:var(--pos)}
+.channel .dot.extended{background:var(--neg)}
 
-/* the channel's axis label — mirrors .row's columns so it cannot drift */
-.chankey{display:flex; align-items:center; padding:0 8px 8px 16px; color:var(--text-3)}
+/* the channel's axis label — mirrors .row's columns so it cannot drift.
+   Retires itself after one look; collapsing rather than hiding so the list
+   below settles smoothly instead of jumping. */
+.chankey{display:flex; align-items:center; padding:0 8px 8px 16px; color:var(--text-3);
+  max-height:32px; overflow:hidden; opacity:1;
+  transition:opacity .4s ease, max-height .4s ease, padding-bottom .4s ease}
+.chankey.gone{opacity:0; max-height:0; padding-bottom:0; pointer-events:none}
 .chankey .namecol{font-size:10px; letter-spacing:.2px; display:block}
 .chankey .star{height:auto}
 .chankey .scale{position:relative; width:72px; height:11px; font-size:9.5px}
@@ -109,6 +111,12 @@ button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
 .rolling{position:relative; width:72px; height:26px}
 .rolling .base{position:absolute; top:12.5px; width:72px; height:1px; background:var(--fill)}
 .rolling i{position:absolute; border-radius:1px}
+
+/* buy-zone filter */
+.chipwrap{padding:0 16px 8px}
+.zonechip{padding:5px 11px; border-radius:999px; background:var(--fill);
+  color:var(--text-2); font-size:12.5px; font-weight:500; font-variant-numeric:tabular-nums}
+.zonechip.on{background:var(--pos); color:var(--bg); font-weight:600}
 
 /* tab bar */
 .tabbar{display:flex; border-top:.5px solid var(--sep); background:var(--bg);

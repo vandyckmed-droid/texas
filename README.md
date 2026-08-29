@@ -124,14 +124,31 @@ Two caveats the display exists to handle:
   correlates +0.86 with blended momentum, so it is a second estimate of the
   same trend rather than new information.
 - `R² < 0.20` means there is no trend to sit inside — that is 119 of the 500
-  names — so the app renders those quietly and omits the bands from the chart.
-  A channel fitted to noise otherwise reads exactly like a signal. Fewer than
-  252 bars yields no channel at all rather than a shorter fit relabelled as a
-  252-day one.
+  names — so the app renders those neutrally and they never enter the buy-zone
+  filter. A channel fitted to noise otherwise reads exactly like a signal.
+  Fewer than 252 bars yields no channel at all rather than a shorter fit
+  relabelled as a 252-day one.
 
-  `Trend.marker()` is where this precedence lives, and it is strict rather than
-  a blend: `weak` wins over `far` whatever the z. The marker split over the
-  current snapshot is 293 near · 88 far · 119 weak.
+`Trend.zone()` turns the score into `buy`, `extended` or neutral, and is the
+single source for both the dot's colour and the filter — so the list can never
+show a name whose dot is not green:
+
+| z | zone |
+|---|---|
+| < −2.0 | neutral — too far below to read as a pullback |
+| −2.0 … −0.5 | **buy** — a readable pullback |
+| −0.5 … +0.5 | neutral — sitting on its trend |
+| +0.5 … +2.0 | **extended** |
+| > +2.0 | neutral |
+| R² < 0.20 | neutral, overriding all of the above |
+
+The scale is deliberately not monotonic. Past 2σ the extremes are not more of
+the same signal, they are a different situation — a name 3σ under its own trend
+is likelier broken than cheap — so both ends go quiet rather than louder. The
+weak override is what keeps an unreadable channel out of a buy list: 71 of the
+500 fall in a coloured band on a fit explaining almost none of their price
+action (V would read as extended on an R² of 0.02). None of the current
+top-50 buy-zone names is a weak fit, so it costs nothing where it is used.
 
 ## Screens
 
@@ -144,18 +161,21 @@ Two caveats the display exists to handle:
 
   The channel bar spans ±3σ rather than ±2σ: the spread of `z` across the
   universe is 1.51, not 1.0, so ±2 would peg a fifth of the list at the ends.
-  Ticks mark the trend line and ±2σ, and a one-line legend above the list names
-  the axis, since a dot on a track says nothing about sigma on its own.
+  Ticks mark the trend line and ±2σ, which is exactly where colour stops. One
+  dot size throughout; the hue carries it, per `Trend.zone` above — green below
+  the trend line, red above it, neutral in the middle and at both extremes.
 
-  Nothing in it is coloured. Green and red mean good and bad everywhere else in
-  this app, and on this axis that reading is backwards — the name 3σ *below* its
-  own uptrend is the pullback, the one 3σ above is the stretched one. So
-  position states direction, marker weight states extremeness, and fill states
-  whether the channel can be trusted: **a weak fit stays quiet however extreme
-  its z**, because that z is not interpretable. 18 of the 500 names are both
-  R² < 0.20 and |z| ≥ 2 — V sits +2.24σ out on an R² of 0.02, NWS/NWSA on 0.00 —
-  and ranked by magnitude alone those would be the loudest marks in the list
-  while being the least meaningful. They render as hollow rings instead.
+  A one-line legend names the axis on the first paint after launch and then
+  retires itself, collapsing so the list settles rather than jumps. It is built
+  from the row's own CSS classes, so it cannot drift out of alignment with the
+  track it annotates.
+
+- **Buy zone** — a toggle above the list collapses it to the names in a
+  readable pullback: 14 of the current top 50, 110 of all 500. It is the same
+  predicate as the green dot, so every row it shows is green and every green
+  row is shown. It composes with the all-500 toggle, works under any row
+  visualisation, and the header names what is being shown so a short list is
+  never mysterious.
 
   The last-session move is the final close against the one before it, derived
   from closes already in the payload — the snapshot's last close is exactly what
@@ -177,10 +197,13 @@ Two caveats the display exists to handle:
   existing line into the new horizon rather than replacing it: every window
   resamples to the same 253 points, so the two shapes interpolate. Drag for a
   crosshair. Chevrons walk the list you arrived from without going back. The
-  fitted trend line and its ±2σ bands are drawn beneath the price in the muted
-  separator tone, clipped to the plot, so they read as background structure —
-  and are suppressed on a weak fit. The stat grid includes 6–1 vs 12–1, the
-  momentum-deceleration spread, and the channel position, fit and slope.
+  stat grid includes 6–1 vs 12–1, the momentum-deceleration spread, and the
+  channel position, fit and slope — the position toned by the same `Trend.zone`
+  as the row's dot, so the two screens cannot disagree.
+
+  The fitted line and its ±2σ bands were briefly drawn under the price and were
+  removed: the chart is for reading price, and the channel is already stated
+  twice on that screen, as a number and as a colour.
 
   Candles were cut. They could not morph — a window change alters the bar
   count, leaving nothing to interpolate — and every figure here comes from
