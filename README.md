@@ -345,9 +345,29 @@ which is what makes carrying the full universe cost ~1 MB.
 ## Tests
 
 ```bash
-npm test        # quant + chart geometry
+npm test        # quant + chart geometry, no browser
+npm run test:web    # drives the built page in Chromium
 npm run typecheck
 ```
+
+`test:web` builds `dist/momentum.html` first, then drives it over `file://` —
+which is exactly how the app runs once it is on a home screen, with no server
+and no request after load. It needs a Chromium: `npx playwright install
+chromium`, or `CHROMIUM_PATH` pointed at one you already have. The suites live
+in `web/__browser__/` and cover what unit tests structurally cannot:
+
+| | |
+|---|---|
+| `app.spec.ts` | every screen loads and raises **no page error**; starring deep in the list does not move the reader; the watchlist and row visualisation survive a reload; search ranks exact symbol first; the concentration card falls as a book gets more correlated |
+| `chart.spec.ts` | **chart state does not leak across navigation** — six chevron presses must not grow the canvas count, and leaving must drop it to zero; `touch-action: pan-y` routes pinch to the chart and vertical drag to the page; both axes stretch when dragged and a window tap resets them; a wheel zoom deselects the window button |
+| `rowviz.spec.ts` | the four options and their previews; a **stale stored choice migrates** rather than leaving nothing selected; every channel dot across all 500 rows matches `Trend.zone`; the buy-zone filter shows exactly the green dots; the legend retires and stays gone |
+| `ticker.spec.ts` | the three-metric hierarchy and its phrases; **opening Details does not rebuild the chart** — the very same element must survive |
+
+Two things these deliberately do not claim. **Real pinch-zoom is not proven
+here**: headless synthetic touch does not reproduce the compositor's
+`touch-action` arbitration, so the computed style is a proxy and the gesture
+itself still needs a physical device. And the counts they assert come from the
+committed snapshot, so a refresh that changes the data will move them.
 
 The tests cover the parts where being wrong is silent: momentum on synthetic
 series with known closed-form answers, the skipped month actually being
