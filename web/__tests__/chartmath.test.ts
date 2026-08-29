@@ -120,3 +120,30 @@ test('bucketColor clamps a bucket index outside the scale', () => {
   const top = M.bucketColor(M.BUCKETS - 1, '#EEF0F3', '#1F5FA8', '#B75A17');
   assert.equal(M.bucketColor(99, '#EEF0F3', '#1F5FA8', '#B75A17'), top);
 });
+
+// ---------- last-session move ----------
+
+test('dayChange is the final close against the one before it', () => {
+  assert.ok(Math.abs(M.dayChange([100, 110]) - 0.1) < 1e-12);
+  assert.ok(Math.abs(M.dayChange([50, 40, 100, 90]) - -0.1) < 1e-12);
+});
+
+test('dayChange ignores everything before the last two closes', () => {
+  const noise = Array.from({ length: 250 }, (_, i) => 10 + i * 3);
+  assert.equal(M.dayChange([...noise, 200, 210]), M.dayChange([200, 210]));
+});
+
+test('dayChange is undefined without a prior close to compare against', () => {
+  assert.equal(M.dayChange([100]), null);
+  assert.equal(M.dayChange([]), null);
+  assert.equal(M.dayChange(null), null);
+});
+
+test('dayChange refuses to divide by a zero prior close', () => {
+  assert.equal(M.dayChange([0, 100]), null);
+});
+
+test('dayChange is zero, not null, on an unchanged session', () => {
+  // Distinct outcomes: "flat" must render as 0.00%, "unknown" must render as nothing.
+  assert.equal(M.dayChange([250, 250]), 0);
+});

@@ -43,6 +43,27 @@ var ChartMath = (function () {
     return out;
   }
 
+  /**
+   * Fractional move over the final session of a close series: the last close
+   * against the one before it.
+   *
+   * Needs no new data. The snapshot's last close is exactly what the quote API
+   * reports as "previous close" (checked against FMP across the top 10, matching
+   * to the cent), so the same comparison a broker shows is already derivable
+   * from what ships. Null when there is no prior close to compare against, or
+   * when it is zero.
+   *
+   * Computed from the adjusted series, so a name that has just gone ex-dividend
+   * reads slightly differently from an unadjusted broker headline. That is the
+   * internally consistent choice: every other figure in the app is adjusted.
+   */
+  function dayChange(closes) {
+    if (!closes || closes.length < 2) return null;
+    var prev = closes[closes.length - 2];
+    if (!prev) return null;
+    return closes[closes.length - 1] / prev - 1;
+  }
+
   /** Pads a value range by 6% so the line never touches the frame edge. */
   function padDomain(lo, hi) {
     var span = hi - lo;
@@ -105,6 +126,7 @@ var ChartMath = (function () {
     windowBars: windowBars,
     resampleToN: resampleToN,
     padDomain: padDomain,
+    dayChange: dayChange,
     toRgb: toRgb,
     withAlpha: withAlpha,
     lerpColor: lerpColor,
