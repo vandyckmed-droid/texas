@@ -184,11 +184,17 @@
   window.addEventListener('popstate', function () { if (S.stack.length) S.stack.pop(); render('fromleft'); });
 
   // ---------- shared components ----------
-  function segmented(options, value, compact, onChange) {
+  /**
+   * `alwaysFire` lets the selected option be chosen again. The chart's window
+   * buttons need it: a price-axis stretch leaves the time window — and so the
+   * selected button — correct, but the view still needs a way back, and
+   * re-tapping the current window is the obvious one.
+   */
+  function segmented(options, value, compact, onChange, alwaysFire) {
     var seg = h('div', 'seg' + (compact ? ' compact' : ''));
     options.forEach(function (o) {
       var b = h('button', o.value === value ? 'on' : '', o.label);
-      b.onclick = function () { if (o.value !== value) { haptic(); onChange(o.value); } };
+      b.onclick = function () { if (alwaysFire || o.value !== value) { haptic(); onChange(o.value); } };
       seg.appendChild(b);
     });
     return seg;
@@ -985,28 +991,46 @@
     function winUp() { return chart.c[chart.c.length - 1] >= chart.c[winStart()]; }
 
     var hoverIdx = -1;
+    /* The segmented control claims to describe the view, so once a pinch or an
+       axis drag moves the view somewhere no button describes, no button should
+       look selected. `applying` keeps applyWindow's own range change from
+       immediately deselecting the button that caused it. */
+    var freeView = false, applying = false, viewFrom = -1;
 
     function setReadout() {
-      var off = winStart();
+      var off = freeView && viewFrom >= 0 ? viewFrom : winStart();
       var first = chart.c[off];
       var shown = hoverIdx >= 0 ? chart.c[hoverIdx] : s.price;
       var delta = shown - first, dp = first !== 0 ? delta / first : 0;
       bigEl.textContent = money(shown);
       var sign = delta >= 0 ? '+' : '−';
+      // No window suffix on a free view: it would name a range the chart is
+      // no longer showing.
       roEl.textContent = (hoverIdx >= 0 ? dayLong(chart.t[hoverIdx]) + ' · ' : '') +
         sign + money(Math.abs(delta)) + ' (' + pct(dp) + ')' +
-        (hoverIdx >= 0 ? '' : ' · ' + tickerState.win);
+        (hoverIdx >= 0 || freeView ? '' : ' · ' + tickerState.win);
       roEl.className = 'readout num ' + (delta >= 0 ? 'pos' : 'neg');
     }
 
     /** Move the visible range rather than replacing data — setData resets it. */
-    function applyWindow() {
-      if (!lwc) return;
+    /** The expected visible range for the selected window. */
+    function windowRange() {
       var n = winBars(), len = chart.c.length;
       // A month tick is centred on its first bar, and the axis canvas clips
       // anything past its own left edge, so a boundary landing on the first
       // visible bar loses half its label. Four bars of lead-in keeps it whole.
-      lwc.timeScale().setVisibleLogicalRange({ from: len - n - 4, to: len - 0.5 });
+      return { from: len - n - 4, to: len - 0.5 };
+    }
+
+    function applyWindow() {
+      if (!lwc) return;
+      applying = true;
+      lwc.timeScale().setVisibleLogicalRange(windowRange());
+      // A price-axis drag sets autoScale false and it stays false; without
+      // this a stretched axis could only be reset by leaving the screen.
+      lwc.priceScale('right').applyOptions({ autoScale: true });
+      applying = false;
+      freeView = false;
       var hex = winUp() ? css('--pos') : css('--neg');
       series.applyOptions({
         lineColor: hex,
@@ -1036,10 +1060,11 @@
           horzLine: { color: css('--cross'), width: 1, style: 0, labelBackgroundColor: css('--text-3') },
         },
         localization: { priceFormatter: money },
-        // Vertical touch drag scrolls the page; the chart is inside a scrolling
-        // screen, so claiming that gesture would trap the reader on the chart.
+        // Vertical touch drag scrolls the page; the chart is inside a
+        // scrolling screen, so claiming that gesture would trap the reader.
+        // Everything else — wheel, pinch, and dragging either axis to stretch
+        // it — stays at the library's defaults.
         handleScroll: { vertTouchDrag: false },
-        handleScale: { axisPressedMouseMove: { time: false, price: false } },
       });
       series = lwc.addSeries(LWC.AreaSeries, {
         lineColor: hex,
@@ -1065,6 +1090,18 @@
         }
         if (next !== hoverIdx) { hoverIdx = next; if (next >= 0) haptic(); setReadout(); }
       });
+
+      lwc.timeScale().subscribeVisibleLogicalRangeChange(function (r) {
+        if (!r || applying) return;
+        viewFrom = Math.max(0, Math.min(points.length - 1, Math.round(r.from)));
+        var want = windowRange();
+        // A bar of slack: the library nudges the range to whole pixels.
+        var matches = Math.abs(r.from - want.from) < 1.5 && Math.abs(r.to - want.to) < 1.5;
+        if (matches === !freeView) return;
+        freeView = !matches;
+        renderControls();
+        setReadout();
+      });
       activeChart = lwc;
     }
 
@@ -1079,7 +1116,7 @@
       winWrap.textContent = '';
       winWrap.appendChild(segmented(
         [{value:'1M',label:'1M'},{value:'3M',label:'3M'},{value:'6M',label:'6M'},{value:'12M',label:'12M'}],
-        tickerState.win, true, switchWin));
+        freeView ? null : tickerState.win, true, switchWin, true));
     }
 
     wrap.style.height = HEIGHT + 'px';
