@@ -5,8 +5,8 @@
     "refresh": "tsx scripts/refresh.ts",
     "generate:mock": "tsx scripts/mock.ts",
     "build:web": "tsx web/build.ts",
-    "pretest": "node -e \"const fs=require('fs');for(const d of ['quant/__tests__','web/__tests__'])if(!fs.readdirSync(d).some(f=>f.endsWith('.test.ts')))throw new Error('no test files found in '+d)\"",
-    "test": "tsx --test quant/__tests__/*.test.ts web/__tests__/*.test.ts",
+    "pretest": "node -e \"const fs=require('fs');for(const d of ['quant/__tests__','web/__tests__','scripts/__tests__'])if(!fs.readdirSync(d).some(f=>f.endsWith('.test.ts')))throw new Error('no test files found in '+d)\"",
+    "test": "tsx --test quant/__tests__/*.test.ts web/__tests__/*.test.ts scripts/__tests__/*.test.ts",
     "pretest:web": "npm run build:web",
     "test:web": "tsx --test --test-concurrency=1 web/__browser__/*.spec.ts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json"
