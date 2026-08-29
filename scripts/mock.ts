@@ -2,6 +2,11 @@
  * Generates deterministic synthetic data in exactly the shapes the app consumes,
  * so the app can be built and exercised before (or without) a real FMP refresh.
  * Values are plausible but fabricated; `meta.source: 'mock'` marks the snapshot.
+ *
+ * It writes over data/, which holds the committed real snapshot, so the write
+ * is gated behind --force. This script previously ignored its arguments
+ * entirely: `tsx scripts/mock.ts --help` read as a request for usage and
+ * silently replaced 503 real charts with 120 fabricated ones.
  */
 import { GICS_SECTORS, type ChartFile, type CorrelationSet, type Sector, type StockRow } from '../shared/types.ts';
 import { round, writeSnapshot, type Snapshot } from './write.ts';
@@ -207,4 +212,52 @@ function main(): void {
   console.log(`mock snapshot written: ${N_STOCKS} stocks, asOf ${asOf}`);
 }
 
-main();
+const USAGE = `Usage: tsx scripts/mock.ts --force
+
+Replaces data/ with a deterministic synthetic snapshot, for building and
+exercising the app without a real FMP refresh.
+
+data/ holds the committed real snapshot, so this refuses to run without
+--force. Nothing is written on --help, on an unknown argument, or when
+--force is absent.
+
+  --force      overwrite data/ with mock data
+  --help, -h   print this and exit
+`;
+
+interface Args {
+  force: boolean;
+  help: boolean;
+}
+
+/** Throws on anything not recognised rather than ignoring it. */
+export function parseArgs(argv: readonly string[]): Args {
+  const args: Args = { force: false, help: false };
+  for (const a of argv) {
+    if (a === '--force') args.force = true;
+    else if (a === '--help' || a === '-h') args.help = true;
+    else throw new Error(`unknown argument: ${a}`);
+  }
+  return args;
+}
+
+function cli(argv: readonly string[]): void {
+  let args: Args;
+  try {
+    args = parseArgs(argv);
+  } catch (err) {
+    console.error(`${(err as Error).message}\n\n${USAGE}`);
+    process.exit(1);
+  }
+  if (args.help) {
+    console.log(USAGE);
+    return;
+  }
+  if (!args.force) {
+    console.error(`refusing to overwrite data/ without --force\n\n${USAGE}`);
+    process.exit(1);
+  }
+  main();
+}
+
+cli(process.argv.slice(2));
