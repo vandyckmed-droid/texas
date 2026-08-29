@@ -108,13 +108,33 @@ var Trend = (function () {
     return !ch || ch.r2 === null || ch.r2 < WEAK_R2;
   }
 
+  /** |z| at which a position counts as an extreme, and where the ticks sit. */
+  var FAR = 2;
+
+  /**
+   * Which marker a channel earns: 'near', 'far', or 'weak'.
+   *
+   * Trust gates salience. A weak fit stays quiet *however extreme* its z,
+   * because that z is not interpretable — the precedence is strict, not a
+   * blend. This is not a hypothetical: 18 of the 500 ranked names are both
+   * R2 < 0.20 and |z| >= 2, among them V at z +2.24 on an R2 of 0.02 and
+   * NWS/NWSA at R2 0.00. Ranked by magnitude alone those 18 would be the
+   * loudest marks in the list while being the least meaningful ones.
+   */
+  function marker(ch) {
+    if (!ch || ch.z === null || isWeak(ch)) return 'weak';
+    return Math.abs(ch.z) >= FAR ? 'far' : 'near';
+  }
+
   return {
     WINDOW: WINDOW,
     EPS: EPS,
     WEAK_R2: WEAK_R2,
+    FAR: FAR,
     channel: channel,
     fittedAt: fittedAt,
     isWeak: isWeak,
+    marker: marker,
   };
 })();
 

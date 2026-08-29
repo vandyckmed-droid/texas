@@ -112,6 +112,56 @@ test('isWeak flags an unfittable channel so noise cannot read as signal', () => 
   assert.equal(T.isWeak({ r2: 0.9 }), false);
 });
 
+// ---------- marker precedence ----------
+
+/**
+ * Trust gates salience. These assert the precedence is strict: a weak fit is
+ * quiet however extreme its z, because that z is not interpretable. Getting
+ * this backwards would give the least meaningful names the loudest marks.
+ */
+test('a weak fit stays quiet however extreme its z', () => {
+  assert.equal(T.marker({ r2: 0.05, z: 2.7 }), 'weak');
+  assert.equal(T.marker({ r2: 0.02, z: -4.0 }), 'weak');
+  assert.equal(T.marker({ r2: 0.0, z: 3.1 }), 'weak');
+});
+
+test('a trustworthy fit is emphasised only past the FAR threshold', () => {
+  assert.equal(T.marker({ r2: 0.9, z: 2.7 }), 'far');
+  assert.equal(T.marker({ r2: 0.9, z: -2.7 }), 'far');
+  assert.equal(T.marker({ r2: 0.9, z: T.FAR }), 'far', 'the threshold is inclusive');
+  assert.equal(T.marker({ r2: 0.9, z: 1.99 }), 'near');
+  assert.equal(T.marker({ r2: 0.9, z: 0 }), 'near');
+});
+
+test('an absent or unscorable channel is weak, not near', () => {
+  assert.equal(T.marker(null), 'weak');
+  assert.equal(T.marker(undefined), 'weak');
+  assert.equal(T.marker({ r2: 0.9, z: null }), 'weak');
+  assert.equal(T.marker({ r2: null, z: 1 }), 'weak');
+});
+
+test('the marker split over the snapshot, and every weak-and-extreme name', () => {
+  const rankings = readJson('data/rankings.json');
+  const counts: Record<string, number> = { near: 0, far: 0, weak: 0 };
+  const weakAndExtreme: string[] = [];
+  for (const s of rankings.stocks as { symbol: string; fileKey: string }[]) {
+    const ch = T.channel(readJson(`data/charts/${s.fileKey}.json`).c);
+    const m = T.marker(ch);
+    counts[m]++;
+    if (T.isWeak(ch) && Math.abs(ch.z) >= T.FAR) {
+      weakAndExtreme.push(s.symbol);
+      // The rule that matters: extreme but untrustworthy must not be emphasised.
+      assert.equal(m, 'weak', `${s.symbol} (z ${ch.z}, R2 ${ch.r2}) must stay quiet`);
+    }
+  }
+  assert.deepEqual(counts, { near: 293, far: 88, weak: 119 });
+  assert.equal(weakAndExtreme.length, 18);
+  // Named so a data refresh that changes the picture is visible in the diff.
+  for (const sym of ['V', 'NWS', 'NWSA', 'ADP', 'PAYX', 'LH']) {
+    assert.ok(weakAndExtreme.includes(sym), `${sym} should be weak-and-extreme`);
+  }
+});
+
 // ---------- cross-check against an independent implementation ----------
 
 /**
