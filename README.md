@@ -206,10 +206,17 @@ change at all.
 
 - **Ranks** — top 50 by blended momentum or its vol-adjusted equivalent, with
   a toggle at the foot to show all 500. The row visualisation is chosen in
-  Settings: a 52-week range bar, the rolling blended score, accelerating-or-
-  fading (6–1 momentum against 12–1 — red at the top of a momentum list means
-  the move is old), where the price sits in its 252-day regression channel, the
-  last session's move, or watchlist impact.
+  Settings, from four: a 52-week range bar, where the price sits in its 252-day
+  regression channel, the last session's move, or watchlist impact.
+
+  Three others were cut after use: the rolling blended score, accelerating-or-
+  fading (6–1 against 12–1), and trend acceleration. A row visualisation has to
+  earn a scan of 50 rows, and these did not — the two acceleration measures both
+  remain as ticker stats, where they are read one name at a time. `ROW_VIZ` is
+  the single list behind the rows, the settings screen and the stored-value
+  check, so an option cannot linger in one of them after leaving the others, and
+  a device still holding a removed choice is coerced to the range bar on load
+  rather than being left with nothing selected.
 
   The channel bar spans ±3σ rather than ±2σ: the spread of `z` across the
   universe is 1.51, not 1.0, so ±2 would peg a fifth of the list at the ends.
@@ -222,18 +229,16 @@ change at all.
   from the row's own CSS classes, so it cannot drift out of alignment with the
   track it annotates.
 
-- **Trend acceleration** — a seventh row visualisation on the same track, dot
-  green to the right (the trend is improving) and red to the left. Green sits on
-  the opposite side from the channel's green; the meaning — favourable — is the
-  same, and the two are never on screen together since the row visualisation is
-  a single choice. Paired with the buy-zone filter it answers the question the
-  filter raises: of the 14 names in a readable pullback, which are turning.
 - **Buy zone** — a toggle above the list collapses it to the names in a
   readable pullback: 14 of the current top 50, 110 of all 500. It is the same
   predicate as the green dot, so every row it shows is green and every green
   row is shown. It composes with the all-500 toggle, works under any row
   visualisation, and the header names what is being shown so a short list is
   never mysterious.
+
+  Dropping the rolling row visualisation left its weekly series unread, so the
+  build now strips `rolling` from the payload alongside `prevRank*` — 82 KB, and
+  1.31 MB down to 1.22 MB. The refresh still records it.
 
   The last-session move is the final close against the one before it, derived
   from closes already in the payload — the snapshot's last close is exactly what

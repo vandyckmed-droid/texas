@@ -90,11 +90,6 @@ button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
   background:var(--text-2); opacity:.78}
 .channel .dot.buy{background:var(--pos)}
 .channel .dot.extended{background:var(--neg)}
-/* acceleration reuses the track: green is improving, on the right. The side
-   differs from the channel's green, the meaning (favourable) does not, and the
-   two are never on screen together. */
-.channel .dot.improving{background:var(--pos)}
-.channel .dot.worsening{background:var(--neg)}
 
 /* the channel's axis label — mirrors .row's columns so it cannot drift.
    Retires itself after one look; collapsing rather than hiding so the list
@@ -111,12 +106,6 @@ button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
 .chankey .scale .a{left:0}
 .chankey .scale .b{transform:translateX(-50%)}
 .chankey .scale .c{right:0}
-.trend{position:relative; width:72px; height:26px}
-.trend .axis{position:absolute; left:35.5px; top:6px; width:1px; height:14px; background:var(--text-3); opacity:.5}
-.trend i.fill{position:absolute; border-radius:1px}
-.rolling{position:relative; width:72px; height:26px}
-.rolling .base{position:absolute; top:12.5px; width:72px; height:1px; background:var(--fill)}
-.rolling i{position:absolute; border-radius:1px}
 
 /* buy-zone filter */
 .chipwrap{padding:0 16px 8px}
