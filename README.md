@@ -251,10 +251,10 @@ change at all.
   and which single drop would help most. Each row shows what that name is
   worth to the list — what dropping it would cost, or what starring it would
   add — from the Elton–Gruber add rule evaluated at equal weight.
-- **Ticker** — the price line over 1M/3M/6M/12M. Changing window reshapes the
-  existing line into the new horizon rather than replacing it: every window
-  resamples to the same 253 points, so the two shapes interpolate. Drag for a
-  crosshair. Chevrons walk the list you arrived from without going back. The
+- **Ticker** — the price over 1M/3M/6M/12M, drawn by TradingView's
+  **lightweight-charts** (v5). Real time and price axes, a magnet crosshair with
+  synced axis labels, and pan and pinch-zoom. Chevrons walk the list you arrived
+  from without going back. The
   stat grid includes 6–1 vs 12–1, the momentum-deceleration spread, and the
   channel position, fit and slope, plus trend acceleration and the phase it
   implies (`rising, slowing` / `falling, improving` and the other two). Position
@@ -265,10 +265,28 @@ change at all.
   removed: the chart is for reading price, and the channel is already stated
   twice on that screen, as a number and as a colour.
 
-  Candles were cut. They could not morph — a window change alters the bar
-  count, leaving nothing to interpolate — and every figure here comes from
-  adjusted closes, with the intraday range already shown as the 52-week range.
-  Charts therefore ship close-only.
+  The library is a build-time devDependency, not a runtime one: `web/build.ts`
+  inlines the standalone IIFE build from `node_modules` alongside the app's own
+  scripts, so the page still makes no network requests. It costs about 200 KB
+  raw (62 KB gzipped) and took the file from 1.12 MB to 1.30 MB.
+
+  Two things follow from the switch. The window buttons now move the visible
+  range over one series rather than replacing the data — `setData` resets the
+  range, and holding the whole series is what makes panning work. And the morph
+  between windows is gone: it existed because every window resampled to the same
+  253 points so two shapes could interpolate, which a real time axis cannot do.
+  `resampleToN`, `padDomain` and `LINE_POINTS` went with it.
+
+  Charts still ship close-only, so the series is an area rather than candles.
+  Candlesticks are now one option change away, but they would need OHLC in the
+  payload, which `web/build.ts` strips — roughly four times the chart bytes.
+
+  Two foot-guns worth recording. The chart owns a `ResizeObserver` and
+  document-level listeners that dropping its container does not release, so
+  `render()` calls `chart.remove()` first — without it every chevron press
+  leaked a chart. And a script block ends at the first `</script` even inside a
+  string literal: the minified library carries SVG markup, so the build escapes
+  that sequence in inlined JS the same way it already did in the data payload.
 - **Correlation** — the top-50 matrix with its clusters, reachable from the
   grid button on Ranks. Blue means moved together, amber means moved opposite.
   The header states how many independent bets the whole top 50 amounts to.
@@ -291,5 +309,9 @@ npm run typecheck
 The tests cover the parts where being wrong is silent: momentum on synthetic
 series with known closed-form answers, the skipped month actually being
 skipped, cluster recovery on planted blocks, and the colour scale's
-monotonicity. `web/chartmath.js` is the code the browser actually runs, not a
-copy of it, so those tests cover what ships.
+monotonicity. `web/chartmath.js` and `web/trend.js` are the code the browser
+actually runs, not copies of it, so those tests cover what ships.
+
+They also earn their keep on cleanups: deleting the chart's morph helpers took
+`lerpColor` with them, and the bucket-colour tests failed immediately because
+`bucketColor` still reaches it. It went back as an internal function.

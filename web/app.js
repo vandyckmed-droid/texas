@@ -158,14 +158,23 @@
 
   // ---------- chart maths (web/chartmath.js — pure, and unit-tested) -------
   var M = ChartMath;
-  var LINE_POINTS = M.LINE_POINTS, BUCKETS = M.BUCKETS, WINDOWS = M.WINDOWS;
-  var windowBars = M.windowBars, resampleToN = M.resampleToN, padDomain = M.padDomain;
-  var withAlpha = M.withAlpha, lerpColor = M.lerpColor, bucketFor = M.bucketFor;
+  var BUCKETS = M.BUCKETS, windowBars = M.windowBars;
+  var withAlpha = M.withAlpha, bucketFor = M.bucketFor;
   var dayChange = M.dayChange;
 
   /** Bucket colour against the live theme, which only the DOM can supply. */
   function bucketColor(b) {
     return M.bucketColor(b, css('--corr-neu'), css('--corr-pos'), css('--corr-neg'));
+  }
+
+  /* The chart owns a ResizeObserver and document-level listeners that dropping
+     its container does not release. render() clears #app on every navigation
+     and the ticker chevrons call it repeatedly, so it is removed explicitly. */
+  var activeChart = null;
+  function destroyChart() {
+    if (!activeChart) return;
+    try { activeChart.remove(); } catch (e) {}
+    activeChart = null;
   }
 
   // ---------- navigation (history-integrated so edge-swipe back works) -----
@@ -915,8 +924,6 @@
     body.appendChild(pb);
 
     var wrap = h('div', 'chartwrap');
-    var canvas = document.createElement('canvas');
-    wrap.appendChild(canvas);
     body.appendChild(wrap);
 
     var controls = h('div', 'controls');
@@ -956,133 +963,117 @@
     body.appendChild(stats);
     sc.appendChild(body);
 
-    // ----- chart engine -----
-    var GUTTER = 46, PAD = 8, HEIGHT = 290;
-    var dpr = Math.min(2, window.devicePixelRatio || 1);
-    var built = {}; // per window: {pts, lo, hi, up, n, slice}
-    Object.keys(WINDOWS).forEach(function (key) {
-      var n = windowBars(key, chart.c.length);
-      var slice = chart.c.slice(chart.c.length - n);
-      var dom = padDomain(Math.min.apply(null, slice), Math.max.apply(null, slice));
-      built[key] = { pts: resampleToN(slice, LINE_POINTS), lo: dom[0], hi: dom[1],
-        up: slice[n - 1] >= slice[0], n: n, slice: slice };
-    });
-    var W = 0, plotW = 0, plotH = HEIGHT - 2 * PAD;
-    var ctx = canvas.getContext('2d');
-    function sizeCanvas() {
-      W = Math.min(app.clientWidth, 520);
-      canvas.width = W * dpr; canvas.height = HEIGHT * dpr;
-      canvas.style.height = HEIGHT + 'px';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      plotW = W - GUTTER;
-    }
-    sizeCanvas();
+    // ----- chart (TradingView lightweight-charts v5) -----
+    /* The hand-rolled canvas this replaces morphed between windows by
+       resampling every window to the same point count. That is gone: the chart
+       now holds the whole series and a window button moves the visible range,
+       which is what makes panning and pinch-zoom work at all. */
+    var HEIGHT = 290;
+    var LWC = window.LightweightCharts;
+    var series = null, lwc = null;
 
-    var cur = { pts: built[tickerState.win].pts.slice(), lo: built[tickerState.win].lo, hi: built[tickerState.win].hi,
-      color: built[tickerState.win].up ? css('--pos') : css('--neg') };
-    var animFrom = null, animStart = 0, animDur = 0, raf = 0;
-    var active = -1; // crosshair index within window
-
-    function yFor(v, lo, hi) { return PAD + (1 - (v - lo) / (hi - lo)) * plotH; }
-
-    function drawAxis(lo, hi, vmin, vmax) {
-      ctx.strokeStyle = css('--sep'); ctx.fillStyle = css('--text-3');
-      ctx.font = '500 10.5px -apple-system, sans-serif'; ctx.textAlign = 'right';
-      [vmax, (vmin + vmax) / 2, vmin].forEach(function (v) {
-        var y = yFor(v, lo, hi);
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(plotW, y); ctx.lineWidth = 0.5; ctx.stroke();
-        ctx.fillText(money(v), W - 4, y + 3.5);
-      });
+    /** yyyymmdd integer to the 'YYYY-MM-DD' BusinessDay string the library wants. */
+    function isoOf(t) {
+      var y = Math.floor(t / 10000), m = Math.floor(t / 100) % 100, d = t % 100;
+      return y + '-' + (m < 10 ? '0' : '') + m + '-' + (d < 10 ? '0' : '') + d;
     }
+    var points = chart.c.map(function (v, i) { return { time: isoOf(chart.t[i]), value: v }; });
 
-    function draw() {
-      ctx.clearRect(0, 0, W, HEIGHT);
-      var t = 1;
-      if (animFrom) {
-        t = Math.min(1, (performance.now() - animStart) / animDur);
-        var e = 1 - Math.pow(1 - t, 3); // cubic-out
-        for (var i = 0; i < LINE_POINTS; i++)
-          cur.pts[i] = animFrom.pts[i] + (animTo.pts[i] - animFrom.pts[i]) * e;
-        cur.lo = animFrom.lo + (animTo.lo - animFrom.lo) * e;
-        cur.hi = animFrom.hi + (animTo.hi - animFrom.hi) * e;
-        cur.color = lerpColor(animFrom.hex, animTo.hex, e);
-        if (t >= 1) animFrom = null;
-      }
-      var wk = built[tickerState.win];
-      var vmin = Math.min.apply(null, wk.slice), vmax = Math.max.apply(null, wk.slice);
-      drawAxis(cur.lo, cur.hi, vmin, vmax);
-      ctx.beginPath();
-      for (var k = 0; k < LINE_POINTS; k++) {
-        var x = (k / (LINE_POINTS - 1)) * plotW, y = yFor(cur.pts[k], cur.lo, cur.hi);
-        if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.save();
-      ctx.lineTo(plotW, HEIGHT - PAD); ctx.lineTo(0, HEIGHT - PAD); ctx.closePath();
-      var grad = ctx.createLinearGradient(0, PAD, 0, HEIGHT);
-      grad.addColorStop(0, withAlpha(cur.color, 0.18));
-      grad.addColorStop(1, withAlpha(cur.color, 0));
-      ctx.fillStyle = grad; ctx.fill();
-      ctx.restore();
-      ctx.beginPath();
-      for (var k2 = 0; k2 < LINE_POINTS; k2++) {
-        var x2 = (k2 / (LINE_POINTS - 1)) * plotW, y2 = yFor(cur.pts[k2], cur.lo, cur.hi);
-        if (k2 === 0) ctx.moveTo(x2, y2); else ctx.lineTo(x2, y2);
-      }
-      ctx.strokeStyle = cur.color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-      ctx.stroke();
-      if (active >= 0) {
-        var n = wk.n, ci = Math.min(active, n - 1);
-        var cx = (ci / Math.max(1, n - 1)) * plotW, cy = yFor(wk.slice[ci], cur.lo, cur.hi);
-        crosshair(cx, cy, cur.color);
-      }
-      if (animFrom) raf = requestAnimationFrame(draw);
-    }
-    function crosshair(cx, cy, color) {
-      ctx.strokeStyle = css('--cross'); ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(cx, PAD); ctx.lineTo(cx, HEIGHT - PAD); ctx.stroke();
-      ctx.beginPath(); ctx.arc(cx, cy, 6.5, 0, 7); ctx.fillStyle = 'rgba(128,128,128,0.2)'; ctx.fill();
-      ctx.beginPath(); ctx.arc(cx, cy, 3.5, 0, 7); ctx.fillStyle = color; ctx.fill();
-    }
+    /** Bars in the selected window, and the close it is measured from. */
+    function winBars() { return windowBars(tickerState.win, chart.c.length); }
+    function winStart() { return chart.c.length - winBars(); }
+    function winUp() { return chart.c[chart.c.length - 1] >= chart.c[winStart()]; }
+
+    var hoverIdx = -1;
 
     function setReadout() {
-      var wk = built[tickerState.win];
-      var n = wk.n, off = chart.c.length - n;
+      var off = winStart();
       var first = chart.c[off];
-      var idx = active >= 0 && active < n ? active : null;
-      var shown = idx === null ? s.price : chart.c[off + idx];
+      var shown = hoverIdx >= 0 ? chart.c[hoverIdx] : s.price;
       var delta = shown - first, dp = first !== 0 ? delta / first : 0;
       bigEl.textContent = money(shown);
       var sign = delta >= 0 ? '+' : '−';
-      if (idx === null) {
-        roEl.textContent = sign + money(Math.abs(delta)) + ' (' + pct(dp) + ') · ' + tickerState.win;
-        roEl.className = 'readout num ' + (delta >= 0 ? 'pos' : 'neg');
-      } else {
-        roEl.textContent = dayLong(chart.t[off + idx]) + ' · ' + sign + money(Math.abs(delta)) + ' (' + pct(dp) + ')';
-        roEl.className = 'readout num ' + (delta >= 0 ? 'pos' : 'neg');
-      }
+      roEl.textContent = (hoverIdx >= 0 ? dayLong(chart.t[hoverIdx]) + ' · ' : '') +
+        sign + money(Math.abs(delta)) + ' (' + pct(dp) + ')' +
+        (hoverIdx >= 0 ? '' : ' · ' + tickerState.win);
+      roEl.className = 'readout num ' + (delta >= 0 ? 'pos' : 'neg');
     }
 
-    var animTo = null;
+    /** Move the visible range rather than replacing data — setData resets it. */
+    function applyWindow() {
+      if (!lwc) return;
+      var n = winBars(), len = chart.c.length;
+      // A month tick is centred on its first bar, and the axis canvas clips
+      // anything past its own left edge, so a boundary landing on the first
+      // visible bar loses half its label. Four bars of lead-in keeps it whole.
+      lwc.timeScale().setVisibleLogicalRange({ from: len - n - 4, to: len - 0.5 });
+      var hex = winUp() ? css('--pos') : css('--neg');
+      series.applyOptions({
+        lineColor: hex,
+        topColor: withAlpha(hex, 0.28),
+        bottomColor: withAlpha(hex, 0),
+      });
+    }
+
+    function buildChart() {
+      if (!LWC || !wrap.isConnected) return;
+      var hex = winUp() ? css('--pos') : css('--neg');
+      lwc = LWC.createChart(wrap, {
+        autoSize: true,
+        layout: {
+          background: { color: 'transparent' },
+          textColor: css('--text-3'),
+          fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+          fontSize: 10,
+          attributionLogo: false,
+        },
+        grid: { vertLines: { visible: false }, horzLines: { color: css('--sep') } },
+        rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.08 } },
+        timeScale: { borderVisible: false, fixLeftEdge: false, fixRightEdge: false },
+        crosshair: {
+          mode: LWC.CrosshairMode.Magnet,
+          vertLine: { color: css('--cross'), width: 1, style: 0, labelBackgroundColor: css('--text-3') },
+          horzLine: { color: css('--cross'), width: 1, style: 0, labelBackgroundColor: css('--text-3') },
+        },
+        localization: { priceFormatter: money },
+        // Vertical touch drag scrolls the page; the chart is inside a scrolling
+        // screen, so claiming that gesture would trap the reader on the chart.
+        handleScroll: { vertTouchDrag: false },
+        handleScale: { axisPressedMouseMove: { time: false, price: false } },
+      });
+      series = lwc.addSeries(LWC.AreaSeries, {
+        lineColor: hex,
+        topColor: withAlpha(hex, 0.28),
+        bottomColor: withAlpha(hex, 0),
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      series.setData(points);
+      applyWindow();
+
+      /* param.time is undefined outside the data, and seriesData is empty
+         between bars — both mean "not hovering", not "hovering at zero". */
+      lwc.subscribeCrosshairMove(function (param) {
+        var next = -1;
+        if (param && param.point && param.time !== undefined && param.seriesData) {
+          var d = param.seriesData.get(series);
+          if (d && d.value !== undefined) {
+            var logical = param.logical;
+            if (typeof logical === 'number') next = Math.max(0, Math.min(points.length - 1, Math.round(logical)));
+          }
+        }
+        if (next !== hoverIdx) { hoverIdx = next; if (next >= 0) haptic(); setReadout(); }
+      });
+      activeChart = lwc;
+    }
+
     function switchWin(w) {
-      var fromLine = { pts: cur.pts.slice(), lo: cur.lo, hi: cur.hi, hex: rgbToHex(cur.color) };
       tickerState.win = w;
-      active = -1;
-      animTo = { pts: built[w].pts, lo: built[w].lo, hi: built[w].hi,
-        hex: built[w].up ? css('--pos') : css('--neg') };
-      fromLine.hex = fromLine.hex || animTo.hex;
-      animFrom = fromLine;
-      animStart = performance.now();
-      animDur = 350;
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(draw);
+      hoverIdx = -1;
+      applyWindow();
       renderControls();
       setReadout();
-    }
-    function rgbToHex(c) {
-      if (c[0] === '#') return c;
-      var m = c.match(/\d+/g);
-      if (!m) return null;
-      return '#' + m.slice(0, 3).map(function (v) { return (+v).toString(16).padStart(2, '0'); }).join('');
     }
     function renderControls() {
       winWrap.textContent = '';
@@ -1091,25 +1082,12 @@
         tickerState.win, true, switchWin));
     }
 
-    // crosshair pointer handling (canvas has touch-action:none)
-    var lastIdx = -1;
-    function pointIndex(e) {
-      var rect = canvas.getBoundingClientRect();
-      var x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-      var n = built[tickerState.win].n;
-      return Math.max(0, Math.min(n - 1, Math.round((x / plotW) * (n - 1))));
-    }
-    function onDown(e) { active = pointIndex(e); if (active !== lastIdx) { haptic(); lastIdx = active; } draw(); setReadout(); }
-    function onMove(e) { if (active < 0) return; var i = pointIndex(e); if (i !== active) { active = i; haptic(); draw(); setReadout(); } }
-    function onUp() { active = -1; lastIdx = -1; draw(); setReadout(); }
-    canvas.addEventListener('pointerdown', onDown);
-    canvas.addEventListener('pointermove', onMove);
-    canvas.addEventListener('pointerup', onUp);
-    canvas.addEventListener('pointercancel', onUp);
-
+    wrap.style.height = HEIGHT + 'px';
     renderControls();
     setReadout();
-    requestAnimationFrame(draw);
+    // The container has no size until it is in the document, and a chart built
+    // against a zero-width element never recovers.
+    requestAnimationFrame(buildChart);
     return sc;
   }
 
@@ -1390,6 +1368,7 @@
 
   // ---------- root render ----------
   function render(anim) {
+    destroyChart();
     app.textContent = '';
     var route = S.stack.length ? S.stack[S.stack.length - 1] : null;
     if (!route) {

@@ -9,9 +9,9 @@
     "test": "tsx --test quant/__tests__/*.test.ts web/__tests__/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json"
   },
-  "dependencies": {},
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "lightweight-charts": "^5.2.1",
     "tsx": "^4.19.0",
     "typescript": "~5.9.2"
   }
